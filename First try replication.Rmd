@@ -1,0 +1,346 @@
+---
+title: "First Try Replication"
+author: "Nikolina Filiposki but code from previous authors (partly)"
+date: "2024-04-07"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    css: css/lab.css
+  pdf_document:
+    toc: yes
+header-includes:
+   - \usepackage[default]{sourcesanspro}
+   - \usepackage[T1]{fontenc}
+mainfont: SourceSansPro
+---
+
+```{r, setup }
+knitr::opts_chunk$set(echo = TRUE)
+
+p_needed <-
+  c("viridis", 
+    "knitr", 
+    "MASS", 
+    "pROC", 
+    "tidyverse",
+    "stargazer",
+    "haven",
+    "estimatr",
+    "dplyr",
+    "fixest",
+    "ggplot2")
+    #"modelsummery") # not running yet, idk why 
+
+
+packages <- rownames(installed.packages())
+p_to_install <- p_needed[!(p_needed %in% packages)]
+
+if (length(p_to_install) > 0) {
+  install.packages(p_to_install)
+}
+sapply(p_needed, require, character.only = TRUE)
+
+# This is an option for stargazer tables
+#stargazer_opt <- ifelse(knitr::is_html_output(), "html")
+# "latex"
+```
+
+# Load the data 
+```{r, data}
+load("raw-data/dyadic_data_1-4-22.Rdata")
+dta <- updated_data 
+```
+
+# Get rid of unneeded variables 
+```{r, variables}
+vars <- c("to_mp_number", "to_rile", "to_economy", "to_society", "year", "country", 
+          "to_pfeml", "to_femaleleader")
+dta <- dta[vars]
+dta <- na.omit(dta)
+```
+
+# Identiy unique parties being evaluated
+```{r, party variales}
+dta_unique <- unique(dta)
+```
+
+# First Figure 
+```{r, figure no. 1}
+fig1 <- ggplot(dta_unique, aes(x = to_pfeml)) +
+  geom_histogram(color="black", fill="grey40", binwidth =0.1, center=0.25) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme_minimal() +
+  theme(plot.title = element_text(size=12)) +
+  ylab("Frequency")+
+  xlab("Proportion of Women MPs");fig1
+
+```
+
+# CREATING TABLE 1 COLUMNS 1 & 2 
+
+```{r, Table 1 and Table 2, result = 'axis'}
+#Out party % women, non-clustered SEs
+load("raw-data/dyadic_data_1-4-22.Rdata")
+
+dta <-updated_data
+
+#creating the country-year fixed effects
+#dta$cntryyr <-paste(dta$country, dta$year, sep = "")
+
+## Removing smaller parties
+dta <- subset(dta, dta$to_prior_seats >=4)
+
+
+vars <- c("rile_distance_s", "prior_coalition", "prior_opposition", "econ_distance_s", "society_distance_s",
+          "year", "country", "party_dislike", "party_like", "to_pfeml", "to_prior_seats", "to_mp_number")
+# "cntryyr"
+dta <- dta[vars]
+dta <- na.omit(dta)
+
+
+#table1.1 <-lm(party_like ~ to_pfeml + as.factor(cntryyr), data = dta)
+#table1.2 <-lm(party_like ~ to_pfeml + rile_distance_s + prior_coalition + prior_opposition + as.factor(cntryyr), data = dta)
+
+### With clustered SEs
+ #stargazer(table1.1, table1.2, 
+ #          header = F, 
+ #          add.lines = list(c("Country-Year Fixed Effects?", "Yes"), c("Country-Level  #Clustered SEs?", "Yes")),
+ #          se = starprep(table1.1, table1.2,
+ #                        clusters = dta$country),
+ #          keep = c("to_pfeml", "rile_distance_s", "prior_coalition",     #"prior_opposition", 
+ #                   "econ_distance_s", "society_distance_s"))
+rm(dta_unique)
+```
+
+
+```{r}
+#Out party % women, non-clustered SEs
+load("raw-data/dyadic_data_1-4-22.Rdata")
+
+load("raw-data/multilevel_1-5-22.Rdata")
+```
+
+
+```{r}
+head(dta)
+
+par(mfrow = c(2,2))
+
+hist(dta$party_like,
+        border = F,
+        main = "Party Like",
+        cex.main = 0.8,
+        las = 1)
+
+hist(dta$party_dislike,
+        main = "Party Dislike",
+        border = F,
+        cex.main = 0.8,
+        las = 1)
+
+hist(dta$to_pfeml,
+        main = "Percentage of women",
+        border = F,
+        cex.main = 0.8,
+        las = 1)
+
+```
+
+```{r, cats with dta$party_like}
+# cats <- sort(unique(dta$party_like))  # Different categories
+# J <- length(unique(dta$party_like))  # Number of categories
+# 
+# Z <-
+#   matrix(NA, nrow = length(dta$party_like), ncol = J)  # Empty indicator matrix
+# 
+# for (j in 1:J) {
+#   Z[, j] <- dta$party_like == cats[j]
+# }
+# 
+# head(Z)
+
+```
+
+
+```{r, cats with multilevel_data$thermometer_score}
+cats <- sort(unique(multilevel_data$thermometer_score))  # Different categories
+J <- length(unique(multilevel_data$thermometer_score))  # Number of categories
+
+Z <-
+  matrix(NA, nrow = length(multilevel_data$thermometer_score), ncol = J)  # Empty indicator matrix
+
+for (j in 1:J) {
+  Z[, j] <- multilevel_data$thermometer_score == cats[j]
+}
+
+head(Z)
+```
+
+
+```{r}
+ll_ologit <- function(theta, Z, X) {
+  k <- ncol(X)
+  J <- ncol(Z)
+  
+  # Subset theta
+  beta <- theta[1:k]
+  
+  tau <- theta[(k + 1):(k + J - 1)]
+  
+  # Linear Predictor
+  U <- X %*% beta
+  
+  # Probabilities in a matrix
+  probs <- matrix(nrow = length(U), ncol = J)
+  
+  # Calculate Probabilities for the different tau values
+  
+  # The first category is different
+  probs[, 1] <- 1 / (1 + exp(-(tau[1] - U)))
+  
+  # Now the categories in between
+  for (j in 2:(J - 1)) {
+    probs[, j] <- 1 / (1 + exp(-(tau[j] - U))) -
+      1 / (1 + exp(-(tau[j - 1] - U)))
+  }
+  
+  # And the last category is different again.
+  probs[, J] <- 1 - 1 / (1 + exp(-(tau[J - 1] - U)))
+  
+  ll <- sum(log(probs[Z]))
+  
+  # sum over probabilities
+  return(ll)
+}
+
+```
+
+
+```{r}
+
+dta$to_pfeml <- as.numeric(dta$to_pfeml)
+#dta$country <- as.numeric(dta$country)
+dta$year <- as.numeric(dta$year)
+dta$prior_opposition <- as.numeric(dta$prior_opposition)
+
+hist(dta$party_like)
+ggplot(dta, aes(x = to_pfeml, y = party_like)) +
+  geom_point() +  # Add points
+  labs(x = "Women", y = "Party Like Score") +  # Add axis labels
+  ggtitle("Scatterplot of Party Like Scores") +  # Add title
+  theme_bw()
+
+# Dummy for country 
+dta$oceania <- ifelse(dta$country == "Australia"| dta$country == "New Zealand",1,0)
+
+dta$autralia <- ifelse(dta$country == "Australia",1,0)
+dta$nz <- ifelse(dta$country == "New Zealand",1,0)
+dta$israel <- ifelse(dta$country == "Isreal",1,0)
+
+dta$france <- ifelse(dta$country == "France",1,0)
+dta$germany <- ifelse(dta$country == "Germany",1,0)
+dta$austria <- ifelse(dta$country == "Austria",1,0)
+dta$spain <- ifelse(dta$country == "Spain",1,0)
+dta$portugal <- ifelse(dta$country == "Portugal",1,0)
+dta$greece <- ifelse(dta$country == "Grecce",1,0)
+dta$netherlands <- ifelse(dta$country == "Netherlands",1,0)
+dta$switzerland <- ifelse(dta$country == "Switzerland",1,0)
+
+dta$gb <- ifelse(dta$country == "Great Britain",1,0)
+dta$ireland <- ifelse(dta$country == "Ireland",1,0)
+dta$us <- ifelse(dta$country == "United States of America",1,0)
+dta$canada <- ifelse(dta$country == "Canada",1,0)
+
+
+
+dta$sweden <- ifelse(dta$country == "Sweden",1,0)
+dta$norway <- ifelse(dta$country == "Norway",1,0)
+dta$finland <- ifelse(dta$country == "Finland",1,0)
+dta$iceland <- ifelse(dta$country == "Iceland",1,0)
+dta$denmark <- ifelse(dta$country == "Denmark",1,0)
+
+#dta$year
+
+X <- cbind(dta$to_pfeml, dta$germany, dta$prior_opposition)
+
+num_predictors <- ncol(X)
+startvals <- c(rep(0, num_predictors), 0)
+
+#startvals <-
+#  c(rep(0, 3), 0)
+
+# res <- optim(
+#   startvals,
+#   ll_ologit,
+#   Z = Z,
+#   X = X,
+#   method = "L-BFGS-B",
+#   control = list(fnscale = -1, trace = T, maxit = 10000),
+#   hessian = TRUE
+# )
+
+#results <- cbind(res$par, sqrt(diag(solve(-res$hessian))))
+
+# rownames(results) <- c("Women",
+#                        "Country",
+#                        "Year",
+#                        "Prior opposition",
+#                        "tau1",
+#                        "tau2",
+#                        "tau3")
+# 
+# colnames(results) <- c("Coef", "SE")
+# 
+# results
+
+```
+
+
+```{r, m party_like ~ to_pfeml, eval = FALSE}
+dta$party_like <- as.factor(dta$party_like)
+
+m <- polr(party_like ~ to_pfeml, 
+          data = dta, 
+          Hess = TRUE,
+          method = "logistic")
+
+## view a summary of the model
+summary(m)
+```
+
+```{r}
+#load("dyadic_data_1-4-22.Rdata")
+
+#cses1 <- read_dta("raw-data/cses1.dta")
+#rm(cses1)
+
+# like <- cses1 %>%  select(A3020_A)
+# like<- na.omit(like)
+# rm(like)
+
+ 
+
+
+multilevel_data$thermometer_score <- as.factor(multilevel_data$thermometer_score)
+
+n <- polr(thermometer_score ~ to_pfeml, 
+          data = multilevel_data, 
+          Hess = TRUE,
+          method = "logistic")
+
+## view a summary of the model
+summary(n)
+
+
+o <- polr(thermometer_score ~ to_pfeml + cntryyr, 
+          data = multilevel_data, 
+          Hess = TRUE,
+          method = "logistic")
+
+## view a summary of the model
+summary(o)
+
+
+```
+
