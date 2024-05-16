@@ -273,7 +273,8 @@ $$
 
 
 
-```{r}
+
+```{r, spread like Wagner}
 calculate_weighted_AP <- function(data) {
   # List of party preference variables (IMD3008_A to IMD3008_I)
   party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
@@ -581,6 +582,11 @@ add_non_zero_counts <- function(weighted_AP_dyadic) {
 weighted_AP_dyadic <- add_non_zero_counts(weighted_AP_dyadic)
 print(weighted_AP_dyadic)
 
+weighted_AP_dyadic <- cbind(weighted_AP_dyadic, 
+                            matrix(NA, 
+                                   nrow = nrow(weighted_AP_dyadic),
+                                   ncol = length(11:19)))
+
 calculate_division <- function(weighted_AP_dyadic) {
   # Get the non-zero counts from column 10
   non_zero_counts <- weighted_AP_dyadic[, 10]
@@ -614,13 +620,63 @@ calculate_division <- function(weighted_AP_dyadic) {
 
 
 weighted_AP_dyadic <- calculate_division(weighted_AP_dyadic)
-Sorryprint(weighted_AP_dyadic)
+print(weighted_AP_dyadic)
 
 ```
 
 
 
+ Try Ollis approach: Taking the 1/n within likei 
+ 
+```{r}
+calculate_weighted_AP_dyadic <- function(data) {
+  # List of party preference variables (IMD3008_A to IMD3008_I)
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  # List of vote share variables (IMD5001_A to IMD5001_I)
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  # Initialize a matrix to store weighted AP scores for each respondent-party pair
+  num_respondents <- nrow(data)
+  weighted_AP_dyadic <- matrix(0, nrow = num_respondents, ncol = length(party_pref_vars))
+  
+  # Loop through each respondent
+  for (i in 1:num_respondents) {
+    # Get party preference and vote share data for the current respondent
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars])
+    
+    # Get the number of rated parties for the current respondent
+    num_rated_parties <- sum(party_pref != 99)
+    
+    # Loop through each party preference
+    for (j in 1:length(party_pref_vars)) {
+      # Skip value 99
+      if (party_pref[j] == 99) next
+      
+      # Calculate the weighted average party affect for the current respondent
+      likei <- sum(party_pref * vote_share) / num_rated_parties
+      
+      # Calculate the spread for the current respondent-party pair
+      spread_ij <- sqrt((party_pref[j] - likei)^2 * vote_share[j])
+      
+      # Store the weighted AP score for the current respondent-party pair
+      weighted_AP_dyadic[i, j] <- spread_ij
+    }
+  }
+  
+  # Return the matrix of weighted AP scores for each respondent-party pair
+  return(weighted_AP_dyadic)
+}
 
+weighted_AP_dyadic <- calculate_weighted_AP_dyadic(selected_d)
+print(weighted_AP_dyadic)
+
+
+```
+ 
 
 
 
