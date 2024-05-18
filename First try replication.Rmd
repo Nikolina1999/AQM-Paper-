@@ -376,7 +376,7 @@ print(mean_distance_scores)
 
 
 
-Need that score for dyadic data (experiment): 
+Need that score for dyadic data (own approach from Wagner formula): 
 
 $$
 \text{Spread}_{ip} = \sqrt{v_p \times (\text{like}_{ip} - \bar{\text{like}}_i)^2}
@@ -387,11 +387,13 @@ $$
 + $like_ip$ is the like-dislike score assigned by respondent $i$ for party $p$.
 + $likeˉ_i$ is the average like-dislike score assigned by respondent $i$ across all parties.
 
+$$
+like_i = \sum_{p=1}^{P} (v_p \times like_{ip})
+$$
 
 
 
-
-```{r, experiment not correct}
+```{r, experiment correct but without ID}
 calculate_affective_polarization_party <- function(data) {
   party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
                        "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
@@ -427,274 +429,45 @@ calculate_affective_polarization_party <- function(data) {
 affective_polarization_party_scores <- calculate_affective_polarization_party(selected_d)
 print(affective_polarization_party_scores)
 
-```
-
-
-
-
-```{r, WAP (non-dyadic)}
-calculate_weighted_AP <- function(data) {
-  # List of party preference variables (IMD3008_A to IMD3008_I)
-  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
-                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
-  
-  # List of vote share variables (IMD5001_A to IMD5001_I)
-  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
-                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
-  
-  # Initialize a vector to store weighted AP scores for each respondent
-  weighted_AP_scores <- numeric(nrow(data))
-  
-  # Loop through each respondent
-  for (i in 1:nrow(data)) {
-    # Get party preference and vote share data for the current respondent
-    party_pref <- unlist(data[i, party_pref_vars])
-    vote_share <- unlist(data[i, vote_share_vars])
-    
-    # Initialize variables for calculating weighted average party affect and spread
-    likei <- 0
-    spread_i <- 0
-    
-    # Loop through each party preference
-    for (j in 1:length(party_pref)) {
-      # Skip value 99
-      if (party_pref[j] == 99) next
-      
-      # Calculate the weighted average party affect for the current respondent
-      likei <- likei + party_pref[j] * vote_share[j]
-    }
-    
-    # Calculate the spread for the current respondent
-    for (j in 1:length(party_pref)) {
-      # Skip value 99
-      if (party_pref[j] == 99) next
-      
-      spread_i <- spread_i + (party_pref[j] - likei)^2 * vote_share[j]
-    }
-    spread_i <- sqrt(spread_i)
-    
-    # Store the weighted AP score for the current respondent
-    weighted_AP_scores[i] <- spread_i
-  }
-  
-  # Return the weighted AP scores for each respondent
-  return(weighted_AP_scores)
-}
-
-weighted_AP_scores <- calculate_weighted_AP(selected_d)
-print(weighted_AP_scores)
-
-
-
-```
-
-$$
-\text{WAP}_{ip} = \sqrt{v_p \times (\text{like}_{ip} - \bar{\text{like}}_i)^2}
-
-$$
-
-
-
-```{r, WAP dyadic (currently working with)}
-calculate_weighted_AP_dyadic <- function(data) {
-  # List of party preference variables (IMD3008_A to IMD3008_I)
-  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
-                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
-  
-  # List of vote share variables (IMD5001_A to IMD5001_I)
-  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
-                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
-  
-  # Initialize a matrix to store weighted AP scores for each respondent-party pair
-  num_respondents <- nrow(data)
-  num_parties <- length(party_pref_vars)
-  weighted_AP_dyadic <- matrix(0, nrow = num_respondents, ncol = num_parties)
-  
-  # Loop through each respondent
-  for (i in 1:num_respondents) {
-    # Get party preference and vote share data for the current respondent
-    party_pref <- unlist(data[i, party_pref_vars])
-    vote_share <- unlist(data[i, vote_share_vars])
-    
-    # Loop through each party preference
-    for (j in 1:num_parties) {
-      # Skip value 99
-      if (party_pref[j] == 99) next
-      
-      # Calculate the weighted average party affect for the current respondent
-      likei <- sum(party_pref * vote_share)
-      
-      # Calculate the spread for the current respondent-party pair
-      spread_ij <- sqrt((party_pref[j] - likei)^2 * vote_share[j])
-      
-      # Store the weighted AP score for the current respondent-party pair
-      weighted_AP_dyadic[i, j] <- spread_ij
-    }
-  }
-  
-  # Return the matrix of weighted AP scores for each respondent-party pair
-  return(weighted_AP_dyadic)
-}
-
-weighted_AP_dyadic <- calculate_weighted_AP_dyadic(selected_d)
-print(weighted_AP_dyadic)
-
-```
-
-
-```{r, plot weighted AP}
 
 
 # Convert matrix to data frame
-weighted_AP_df <- as.data.frame(weighted_AP_dyadic)
+AP_party_df <- as.data.frame(affective_polarization_party_scores)
 
 # Add row names as a column
-weighted_AP_df$Respondent <- rownames(weighted_AP_df)
+AP_party_df$Respondent <- rownames(AP_party_df)
+
+
+AP_party_df <- AP_party_df %>% 
+  rename(
+    A = V1,
+    B = V2,
+    C = V3,
+    D = V4,
+    E = V5,
+    F = V6,
+    G = V7,
+    H = V8,
+    I = V9
+  )
+
 
 # Reshape data frame into long format
-weighted_AP_long <- pivot_longer(weighted_AP_df, cols = -Respondent, names_to = "Party", values_to = "WAP")
-
-# Generate heatmap
-ggplot(data = weighted_AP_long, aes(x = Party, y = Respondent, fill = WAP)) +
-  geom_tile(color = "white") +
-  scale_fill_gradient(low = "lightblue", high = "darkblue") +
-  labs(title = "Dyadic Weighted AP Scores", x = "Party", y = "Respondent") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
-
+AP_party_long <- pivot_longer(AP_party_df, cols = -Respondent, names_to = "party_to", values_to = "WAP")
 
 ```
 
 
 
-```{r}
-
-add_non_zero_counts <- function(weighted_AP_dyadic) {
-  # Count non-zero party preferences for each respondent
-  non_zero_counts <- apply(weighted_AP_dyadic != 0, 1, sum)
-  
-  # Add non-zero counts as column 10
-  weighted_AP_dyadic <- cbind(weighted_AP_dyadic, non_zero_counts)
-  
-  return(weighted_AP_dyadic)
-}
-
-weighted_AP_dyadic <- add_non_zero_counts(weighted_AP_dyadic)
-print(weighted_AP_dyadic)
-
-weighted_AP_dyadic <- cbind(weighted_AP_dyadic, 
-                            matrix(NA, 
-                                   nrow = nrow(weighted_AP_dyadic),
-                                   ncol = length(11:19)))
-
-calculate_division <- function(weighted_AP_dyadic) {
-  # Get the non-zero counts from column 10
-  non_zero_counts <- weighted_AP_dyadic[, 10]
-  
-  # Divide values for each respondent's party preferences row-wise and store in new columns 11-19
-  for (i in 1:nrow(weighted_AP_dyadic)) {
-    # Get the values for the respondent
-    respondent_values <- weighted_AP_dyadic[i, 1:9]
-    
-    # Calculate the division factors (non-zero counts for the respective respondent)
-    division_factors <- non_zero_counts[i]
-    
-    # Initialize new column indices
-    new_column_indices <- 11:19
-    
-    # Divide values by the division factor and store in new columns
-    # Skip division if the party preference is zero
-    for (j in 1:9) {
-      if (respondent_values[j] != 0) {
-        weighted_AP_dyadic[i, new_column_indices[j]] <- respondent_values[j] / division_factors
-      } else {
-        weighted_AP_dyadic[i, new_column_indices[j]] <- 0
-      }
-    }
-  }
-  
-  return(weighted_AP_dyadic)
-}
-
-
-
-
-weighted_AP_dyadic <- calculate_division(weighted_AP_dyadic)
-print(weighted_AP_dyadic)
-
-```
-
-
-
- Try Ollis approach: Taking the 1/n within likei 
- 
-```{r}
-calculate_weighted_AP_dyadic <- function(data) {
-  # List of party preference variables (IMD3008_A to IMD3008_I)
-  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
-                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
-  
-  # List of vote share variables (IMD5001_A to IMD5001_I)
-  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
-                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
-  
-  # Initialize a matrix to store weighted AP scores for each respondent-party pair
-  num_respondents <- nrow(data)
-  weighted_AP_dyadic <- matrix(0, nrow = num_respondents, ncol = length(party_pref_vars))
-  
-  # Loop through each respondent
-  for (i in 1:num_respondents) {
-    # Get party preference and vote share data for the current respondent
-    party_pref <- unlist(data[i, party_pref_vars])
-    vote_share <- unlist(data[i, vote_share_vars])
-    
-    # Get the number of rated parties for the current respondent
-    num_rated_parties <- sum(party_pref != 99)
-    
-    # Loop through each party preference
-    for (j in 1:length(party_pref_vars)) {
-      # Skip value 99
-      if (party_pref[j] == 99) next
-      
-      # Calculate the weighted average party affect for the current respondent
-      likei <- sum(party_pref * vote_share) / num_rated_parties
-      
-      # Calculate the spread for the current respondent-party pair
-      spread_ij <- sqrt((party_pref[j] - likei)^2 * vote_share[j])
-      
-      # Store the weighted AP score for the current respondent-party pair
-      weighted_AP_dyadic[i, j] <- spread_ij
-    }
-  }
-  
-  # Return the matrix of weighted AP scores for each respondent-party pair
-  return(weighted_AP_dyadic)
-}
-
-weighted_AP_dyadic <- calculate_weighted_AP_dyadic(selected_d)
-print(weighted_AP_dyadic)
-
-
-```
- 
-
-
-
-
-
-
-
-
-
-```{r, WAP dyadic (previous model)}
-calculate_affective_polarization_party <- function(data, scaling_factor) {
+```{r, AP with ID correct one}
+calculate_affective_polarization_party <- function(data, respondent_ids) {
   party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
                        "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
   
   vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
                        "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
   
-  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars))
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
   
   for (i in 1:nrow(data)) {
     party_pref <- unlist(data[i, party_pref_vars])
@@ -711,58 +484,166 @@ calculate_affective_polarization_party <- function(data, scaling_factor) {
     valid_parties <- party_pref != 99
     affective_polarization_row[valid_parties] <- sqrt(vote_share[valid_parties] * (party_pref[valid_parties] - likei)^2)
     
-    # Store the scaled affective polarization scores for the current respondent
-    affective_polarization_scores[i, ] <- affective_polarization_row * scaling_factor
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
   }
+  
+#  colnames(affective_polarization_scores) <- c("ID", paste0("Affective_Polarization_", LETTERS[1:length(party_pref_vars)]))
+  #colnames(affective_polarization_scores)[1] <- "ID"  # Rename the first column only
   
   return(affective_polarization_scores)
 }
 
-# Example usage:
-scaling_factor <- 0.1  # Adjust the scaling factor as needed
-affective_polarization_party_scores <- calculate_affective_polarization_party(selected_d, scaling_factor)
+affective_polarization_party_scores <- calculate_affective_polarization_party(selected_d, selected_d$IMD1005)
 print(affective_polarization_party_scores)
 
+
+# Convert matrix to data frame
+AP_party_df <- as.data.frame(affective_polarization_party_scores)
+
+# Add row names as a column
+AP_party_df$Respondent <- rownames(AP_party_df)
+
+
+AP_party_df <- AP_party_df %>% 
+  rename(
+    ID = V1, 
+    A = V2,
+    B = V3,
+    C = V4,
+    D = V5,
+    E = V6,
+    F = V7,
+    G = V8,
+    H = V9,
+    I = V10
+  )
+
+
+# Reshape data frame into long format
+AP_party_long <- pivot_longer(AP_party_df, cols = c(-ID, -Respondent), names_to = "party_to", values_to = "WAP")
+
 ```
 
 
 
+```{r, merge AP_party_long mit multilevel_data }
+
+# Perform the merge
+merged_data <- merge(AP_party_long, multilevel_data, by = c("party_to", "ID"))
+
+```
+
+
+```{r, perform first multilevel analysis}
+table1.1 <-lm(party_like ~ to_pfeml + as.factor(cntryyr), data = merged_data)
+summary(table1.1)
+
+
+table1 <- lm(WAP ~ to_pfeml + as.factor(cntryyr), data = merged_data)
+summary(table1)
 
 
 
+table2 <- lm(WAP ~ to_pfeml + as.factor(country), data = merged_data)
+summary(table2)
+
+#table3 <- lm(WAP ~ to_pfeml + as.factor(year), data = merged_data)
+#summary(table3)
+
+count <- sum(merged_data$cntryyr == "Australia1996")
+print(count)
+
+```
 
 
-```{r, match matrix }
-# a matrix data frame called matrix_with_parties where rows represent respondents and columns represent parties (A to I)
-# a dyadic data frame called dyadic_data with columns 'from_party', 'to_party', and 'value'
 
-# Add columns for 'from_party' and 'to_party' to the matrix
-matrix_with_parties$from_party <- NA
-matrix_with_parties$to_party <- NA
+```{r, simulation function}
 
-# Iterate over each row in the dyadic data
-for (i in 1:nrow(dyadic_data)) {
-    from_party <- dyadic_data$from_party[i]
-    to_party <- dyadic_data$to_party[i]
-    value <- dyadic_data$value[i]  # Assuming you have a value associated with each dyadic relationship
-    
-    # Find the corresponding row index in the matrix
-    respondent_index <- match(dyadic_data$respondent[i], matrix_with_parties$respondent)
-    
-    # Update the 'from_party' and 'to_party' columns in the matrix
-    matrix_with_parties$from_party[respondent_index] <- from_party
-    matrix_with_parties$to_party[respondent_index] <- to_party
-    
-    # Optionally, you can also update the value associated with the dyadic relationship in the matrix
-    # matrix_with_parties[respondent_index, paste0("value_", from_party, "_to_", to_party)] <- value
+sim_function <- function(lm_obj, nsim = 1000, scenario){
+  
+  # Step 1: Get the regression coefficients
+  beta_hat <- coef(lm_obj)
+  
+  # Step 2: Generate sampling distribution
+  
+  # Step 2.1: Get the variance-covariance matrix.
+  V_hat <-  vcov(lm_obj) 
+  
+  # Step 2.2: Draw from the multivariate normal distribution.
+  S <- mvrnorm(nsim, beta_hat, V_hat)
+
+  # Step 3: Choose interesting covariate values. 
+  # Make sure the matrix multiplication also works for single scenarios
+  if(is.null(nrow(scenario))){
+    scenario <- matrix(scenario, nrow = 1)
+  }
+  
+  # Print a message if the scenario does not fit the regression.
+  if(ncol(scenario) != length(lm_obj$coefficients)){
+    return(cat("The scenario has the wrong number of variables."))
+  } 
+  
+  # Step 4: Calculate Quantities of Interest - 
+  # Expected Values
+  EV <- S %*% t(scenario)
+  return(EV)
 }
 
-# Now matrix_with_parties should have 'from_party' and 'to_party' columns integrated
+```
+
+```{r, scenario}
+s1 <- c(1, mean(merged_data$to_pfeml), rep(0, 19))
+s2 <- c(1, 0.5, rep(0,19))
+
+ev1 <- sim_function(table2, scenario = s1)
+ev2 <- sim_function(table2, scenario = s2)
+
+fd <- ev2- ev1
+```
+
+
+
+
+
+```{r, plot data usisng heatmap (not a good idea tbh)}
+
+
+# Convert matrix to data frame
+#weighted_AP_df <- as.data.frame(weighted_AP_dyadic)
+
+# Add row names as a column
+#weighted_AP_df$Respondent <- rownames(weighted_AP_df)
+
+# Convert WAP to numeric
+AP_party_long$WAP <- as.numeric(AP_party_long$WAP)
+
+# Reshape data frame into long format
+weighted_AP_long <- pivot_longer(weighted_AP_df, cols = -Respondent, names_to = "Party", values_to = "WAP")
+
+# Generate heatmap
+ggplot(data = AP_party_long, aes(x = party_to, y = Respondent, fill = WAP)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  labs(title = "Dyadic Weighted AP Scores", x = "Party", y = "Respondent") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
 
 ```
 
 
 
+```{r, try to plot the data unsing KDE}
+ggplot(data = AP_party_long, aes(x = WAP)) +
+  geom_density(fill = "skyblue", color = "blue", alpha = 0.5) +
+  labs(title = "Kernel Density Estimation (KDE) Plot of Dyadic Weighted AP Scores", x = "WAP Score", y = "Density") +
+  xlim(0, 3)+
+  theme_minimal()
+```
 
 
 
