@@ -55,7 +55,7 @@ load("raw-data/multilevel_1-5-22.Rdata")
 
 
 
-```{r, AP }
+```{r, data wrangeling part }
 # Load the Data
 load("cses_imd_r/cses_imd.RData")
 
@@ -125,7 +125,7 @@ selected_dataset <- filter(selected_vars, IMD1004 %in% cy_interest)
 
 ```
 
-```{r}
+```{r, filter like variable }
 # Filter out rows with values 96, 97, and 98 from variables IMD3008_A to IMD3008_I
 selected_d <- selected_dataset %>%
   filter_at(vars(starts_with("IMD3008_")), all_vars(!. %in% c(96, 97, 98)))
@@ -539,6 +539,8 @@ merged_data <- merge(AP_party_long, multilevel_data, by = c("party_to", "ID"))
 
 
 ```{r, perform first multilevel analysis}
+
+# Adams et al. 2023 
 table1.1 <-lm(party_like ~ to_pfeml + as.factor(cntryyr), data = merged_data)
 summary(table1.1)
 
@@ -554,8 +556,15 @@ summary(table2)
 #table3 <- lm(WAP ~ to_pfeml + as.factor(year), data = merged_data)
 #summary(table3)
 
-count <- sum(merged_data$cntryyr == "Australia1996")
-print(count)
+count1 <- sum(merged_data$cntryyr == "Australia1996")
+print(count1)
+
+count2 <- sum(multilevel_data$cntryyr == "Australia1996")
+print(count2)
+
+summary(merged_data$cntryyr)
+
+
 
 ```
 
@@ -596,7 +605,12 @@ sim_function <- function(lm_obj, nsim = 1000, scenario){
 ```
 
 ```{r, scenario}
-s1 <- c(1, mean(merged_data$to_pfeml), rep(0, 19))
+
+class(merged_data$to_pfeml)
+mean(merged_data$to_pfeml)
+
+
+s1 <- c(1, 0.15, rep(0, 19))
 s2 <- c(1, 0.5, rep(0,19))
 
 ev1 <- sim_function(table2, scenario = s1)
