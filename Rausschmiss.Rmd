@@ -1074,6 +1074,9 @@ print(normalized_AP_dyadic)
 
 ```
 
+
+
+
 ```{r, WAP dyadic (previous model), not realted to olis}
 calculate_affective_polarization_party <- function(data, scaling_factor) {
   party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
@@ -1112,3 +1115,414 @@ affective_polarization_party_scores <- calculate_affective_polarization_party(se
 print(affective_polarization_party_scores)
 
 ```
+
+
+```{r, account for value 9.99 in vote share (not correct) }
+calculate_affective_polarization_party <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars_1 <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                         "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  vote_share_vars_2 <- c("IMD5003_A", "IMD5003_B", "IMD5003_C", "IMD5003_D", 
+                         "IMD5003_E", "IMD5003_F", "IMD5003_G", "IMD5003_H", "IMD5003_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    
+    # Check if vote share variables from IMD5001 are available, otherwise use IMD5003
+    if (all(is.na(data[i, vote_share_vars_1]))) {
+      vote_share <- unlist(data[i, vote_share_vars_2])
+    } else {
+      vote_share <- unlist(data[i, vote_share_vars_1])
+    }
+    
+    # Exclude problematic vote shares
+    problematic_vote_shares <- c(9.99, 9.97)
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Identify valid ratings excluding problematic vote shares
+    valid_ratings <- which(party_pref != 997 & party_pref != 999 & !vote_share %in% problematic_vote_shares)
+    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    valid_parties <- which(party_pref != 99 & !vote_share %in% problematic_vote_shares)
+    affective_polarization_row[valid_parties] <- sqrt(vote_share[valid_parties] * (party_pref[valid_parties] - likei)^2)
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  # Optionally set column names
+  #colnames(affective_polarization_scores) <- c("ID", paste0("Affective_Polarization_", LETTERS[1:length(party_pref_vars)]))
+  
+  return(affective_polarization_scores)
+}
+
+
+affective_polarization_party_scores <- calculate_affective_polarization_party(selected_d, selected_d$IMD1005)
+print(affective_polarization_party_scores)
+```
+
+
+```{r, experimnet not good yet}
+calculate_affective_polarization_party <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars])
+    
+    # Check if all vote shares are 9.97, if so, use IMD5005_A to IMD5005_I
+    if(all(vote_share == 9.97)) {
+      vote_share <- unlist(data[i, paste0("IMD5005_", LETTERS[1:length(party_pref_vars)])])
+    }
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Calculate the average like-dislike score for the current respondent
+    valid_ratings <- which(!is.na(party_pref) & party_pref != 99)
+    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    valid_parties <- party_pref != 99
+    for(j in 1:length(party_pref)) {
+      if(valid_parties[j]) {
+        if(vote_share[j] %in% c(9.990, 9.97, 9.99)) {
+          affective_polarization_row[j] <- 0  # Skip problematic vote shares
+        } else {
+          affective_polarization_row[j] <- sqrt(vote_share[j] * (party_pref[j] - likei)^2)
+        }
+      } else {
+        affective_polarization_row[j] <- 0  # Skip missing party preferences
+      }
+    }
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  return(affective_polarization_scores)
+}
+
+
+affective_polarization_party_scores <- calculate_affective_polarization_party(selected_d, selected_d$IMD1005)
+print(affective_polarization_party_scores)
+
+```
+
+```{r, accounting for france, wrong}
+calculate_affective_polarization_party <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars])
+    
+    # Check if all vote shares are 9.97, if so, use IMD5005_A to IMD5005_I
+    if(all(vote_share == 9.97)) {
+      vote_share <- unlist(data[i, paste0("IMD5005_", LETTERS[1:length(party_pref_vars)])])
+    }
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Calculate the average like-dislike score for the current respondent
+    valid_ratings <- which(!is.na(party_pref) & party_pref != 99)
+    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    valid_parties <- party_pref != 99
+    affective_polarization_row[valid_parties] <- sqrt(vote_share[valid_parties] * (party_pref[valid_parties] - likei)^2)
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  return(affective_polarization_scores)
+}
+
+```
+
+```{r experiment accounting fro wrong vote share (wrong)}
+calculate_affective_polarization_party <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars])
+    
+    # Check if all vote shares are 9.97, if so, use IMD5005_A to IMD5005_I
+    if(all(vote_share == 9.97)) {
+      vote_share <- unlist(data[i, paste0("IMD5005_", LETTERS[1:length(party_pref_vars)])])
+    }
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Calculate the average like-dislike score for the current respondent
+    valid_ratings <- which(!is.na(party_pref) & party_pref != 99)
+    valid_vote_shares <- which(!is.na(vote_share) & !is.infinite(vote_share) & !(vote_share %in% c(9.990, 9.97, 9.99)))
+    valid_combined <- intersect(valid_ratings, valid_vote_shares)
+    likei <- sum(party_pref[valid_combined] * vote_share[valid_combined], na.rm = TRUE)
+    
+    # Calculate the affective polarization score for non-missing party preferences and valid vote shares
+    for(j in 1:length(party_pref)) {
+      if(party_pref[j] != 99 && !is.na(vote_share[j]) && !is.infinite(vote_share[j]) && !(vote_share[j] %in% c(9.990, 9.97, 9.99))) {
+        affective_polarization_row[j] <- sqrt(vote_share[j] * (party_pref[j] - likei)^2)
+      } else {
+        affective_polarization_row[j] <- 0  # Skip invalid party preferences or vote shares
+      }
+    }
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  return(affective_polarization_scores)
+}
+
+
+```
+
+
+```{r, AP for six cases where vote share and preferences differ}
+calculate_AP_fail <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars]) 
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Filter out vote shares of 9.97, 9.99, and 9.990
+    valid_vote_shares <- !vote_share %in% c(9.97, 9.99, 9.990)
+    
+    # Calculate the average like-dislike score for the current respondent
+    valid_ratings <- which(!is.na(party_pref) & party_pref != 99 & valid_vote_shares)
+    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    valid_parties <- party_pref != 99 & valid_vote_shares
+    affective_polarization_row[valid_parties] <- sqrt(vote_share[valid_parties] * (party_pref[valid_parties] - likei)^2)
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  return(affective_polarization_scores)
+}
+
+
+AP_Fail_scores <- calculate_AP_fail(Fail_selected_d, Fail_selected_d$IMD1005)
+print(AP_Fail_scores)
+```
+
+
+```{r}
+calculate_AP_fail <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars]) 
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Find indices where both party preferences and vote shares are valid
+    valid_indices <- which(!is.na(party_pref) & party_pref != 99 & !is.na(vote_share) 
+                           & !vote_share %in% c(9.97, 9.99, 9.990))
+    
+    # Skip calculation if there are no valid indices
+    if (length(valid_indices) == 0) {
+      next
+    }
+    
+    # Calculate the average like-dislike score for the current respondent
+    likei <- sum(party_pref[valid_indices] * vote_share[valid_indices])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    affective_polarization_row[valid_indices] <- sqrt(vote_share[valid_indices] * (party_pref[valid_indices] - likei)^2)
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  return(affective_polarization_scores)
+}
+
+
+
+AP_Fail_scores <- calculate_AP_fail(Fail_selected_d, Fail_selected_d$IMD1005)
+print(AP_Fail_scores)
+
+```
+
+
+```{r, simulation function}
+
+sim_function <- function(lm_obj, nsim = 1000, scenario){
+  
+  # Step 1: Get the regression coefficients
+  beta_hat <- coef(lm_obj)
+  
+  # Step 2: Generate sampling distribution
+  
+  # Step 2.1: Get the variance-covariance matrix.
+  V_hat <-  vcov(lm_obj) 
+  
+  # Step 2.2: Draw from the multivariate normal distribution.
+  S <- mvrnorm(nsim, beta_hat, V_hat)
+
+  # Step 3: Choose interesting covariate values. 
+  # Make sure the matrix multiplication also works for single scenarios
+  if(is.null(nrow(scenario))){
+    scenario <- matrix(scenario, nrow = 1)
+  }
+  
+  # Print a message if the scenario does not fit the regression.
+  if(ncol(scenario) != length(lm_obj$coefficients)){
+    return(cat("The scenario has the wrong number of variables."))
+  } 
+  
+  # Step 4: Calculate Quantities of Interest - 
+  # Expected Values
+  EV <- S %*% t(scenario)
+  return(EV)
+}
+
+```
+
+```{r, scenario}
+
+s1 <- c(1, 0.15, rep(0, 79))
+s2 <- c(1, 0.5, rep(0, 79))
+
+ev1 <- sim_function(table1, scenario = s1)
+ev2 <- sim_function(table1, scenario = s2)
+
+fd <- ev2- ev1
+
+```
+
+
+
+
+```{r}
+# Fit the model
+table1 <- lm(WAP ~ to_pfeml + as.factor(cntryyr), data = merged_data)
+summary(table1)
+
+# Simulation parameters
+nsim <- 10000
+
+options(digits = 10)
+
+# Step 1: Extract the regression coefficients (fixed effects only)
+beta_hat <- coef(table1)
+
+# Step 2: Generate sampling distribution
+
+# Step 2.1: Get the variance-covariance matrix
+V_hat <- vcov(table1)
+
+# Step 2.2: Draw from the multivariate normal distribution
+S <-mvrnorm(nsim, beta_hat, V_hat)
+
+# Step 3: Choose interesting covariate values for the scenario
+class(merged_data$to_pfeml)
+
+#min_to_pfeml <- min(merged_data$to_pfeml[merged_data$cntryyr == "Great Britain2015"])
+#max_to_pfeml <- max(merged_data$to_pfeml[merged_data$cntryyr == "Great Britain2015"])
+#to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml, length.out = 100)
+
+
+# Using dplyr for filtering and calculating min and max
+filtered_data <- merged_data %>%
+  filter(cntryyr == "Great Britain2015") %>%
+  summarise(min_to_pfeml = min(to_pfeml, na.rm = TRUE),
+            max_to_pfeml = max(to_pfeml, na.rm = TRUE))
+
+# Extract min and max values
+min_to_pfeml <- filtered_data$min_to_pfeml
+max_to_pfeml <- filtered_data$max_to_pfeml
+
+to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml, length.out = 100)
+
+# Extract the relevant cntryyr coefficient
+cntryyr_coef <-  2.17599
+
+# Include the intercept, to_pfeml, and the cntryyr coefficient for "Great Britain2015"
+scenario <- cbind(1, to_pfeml_seq,  cntryyr_coef, length(to_pfeml_seq))
+
+# Step 5: Calculate Expected Values (EV)
+EV <- S %*% t(scenario)
+
+# Step 6: Summarize the results
+ev_mean <- apply(EV, 2, mean)
+ev_ci <- apply(EV, 2, quantile, c(0.025, 0.975))
+
+# You can now visualize the results
+plot(to_pfeml_seq, ev_mean, type = "l", ylim = range(ev_ci), xlab = "to_pfeml", ylab = "Expected WAP")
+lines(to_pfeml_seq, ev_ci[1,], col = "red", lty = 2)
+lines(to_pfeml_seq, ev_ci[2,], col = "red", lty = 2)
+
+```
+

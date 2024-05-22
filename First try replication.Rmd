@@ -30,7 +30,8 @@ p_needed <-
     "dplyr",
     "fixest",
     "ggplot2",
-    "tidyr")
+    "tidyr",
+    "lme4")
     #"modelsummery") # not running yet, idk why 
 
 
@@ -61,6 +62,16 @@ load("cses_imd_r/cses_imd.RData")
 
 # Just in case backup
 cses <- cses_imd
+
+# Special case: DEU_2002 (telephone and mail-back combined here)
+cses <- cses %>%
+  mutate(IMD1004 = ifelse(IMD1004 %in% c("DEU12002", "DEU22002"), "DEU_2002", IMD1004))
+
+# Special case: GRC_2015 (two time points Jan 2015 and Sep 2015 combined here)
+cses <- cses %>%
+  mutate(IMD1004 = ifelse(IMD1004 %in% c("GRC12015", "GRC22015"), "GRC_2015", IMD1004))
+
+
 
 # Select variables of interest
 selected_vars <- select(cses, 
@@ -129,11 +140,6 @@ selected_dataset <- filter(selected_vars, IMD1004 %in% cy_interest)
 # Filter out rows with values 96, 97, and 98 from variables IMD3008_A to IMD3008_I
 selected_d <- selected_dataset %>%
   filter_at(vars(starts_with("IMD3008_")), all_vars(!. %in% c(96, 97, 98)))
-
-# Filter out rows with value 99 in variables IMD3008_A to IMD3008_F
-# selected_d <- selected_d %>%
-#   filter_at(vars(ends_with("_A"), ends_with("_B"), ends_with("_C"), ends_with("_D"), ends_with("_E"), # ends_with("_F")), 
-#             all_vars(!. %in% c(99)))
 ```
 
 
@@ -145,7 +151,32 @@ selected_d[, c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D",
   selected_d[, c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
            "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")] / 100
 
+
+# Divide variables by 100
+selected_d[, c("IMD5005_A", "IMD5005_B", "IMD5005_C", "IMD5005_D", 
+         "IMD5005_E", "IMD5005_F", "IMD5005_G", "IMD5005_H", "IMD5005_I")] <- 
+  selected_d[, c("IMD5005_A", "IMD5005_B", "IMD5005_C", "IMD5005_D", 
+           "IMD5005_E", "IMD5005_F", "IMD5005_G", "IMD5005_H", "IMD5005_I")] / 100
+
 rm(selected_dataset)
+
+# check if we have missings in IMD1001_a to _I (vote share)
+check_values <- function(data, cols, target_value) {
+  for (col in cols) {
+    if (any(data[[col]] == target_value, na.rm = TRUE)) {
+      print(paste(col, "has a value of", target_value))
+    }
+  }
+}
+
+# Columns to check
+cols_to_check <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+
+# Check the values of these columns for the target value 0.999
+check <- check_values(selected_d, cols_to_check, 9.97)
+print(check)
+
+
 
 ```
 
@@ -390,6 +421,74 @@ $$
 $$
 like_i = \sum_{p=1}^{P} (v_p \times like_{ip})
 $$
+```{r AP with selected_d (not accounting for France + special cases)}
+calculate_affective_polarization_party <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars]) 
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Calculate the average like-dislike score for the current respondent
+    valid_ratings <- which(!is.na(party_pref) & party_pref != 99)
+    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    valid_parties <- party_pref != 99
+    affective_polarization_row[valid_parties] <- sqrt(vote_share[valid_parties] * (party_pref[valid_parties] - likei)^2)
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  
+  return(affective_polarization_scores)
+}
+
+
+
+affective_polarization_party_scores <- calculate_affective_polarization_party(selected_d, selected_d$IMD1005)
+print(affective_polarization_party_scores)
+
+
+
+# Convert matrix to data frame
+AP_party_df <- as.data.frame(affective_polarization_party_scores)
+
+# Add row names as a column
+#AP_party_df$Respondent <- rownames(AP_party_df)
+
+
+AP_party_df <- AP_party_df %>% 
+  rename(
+    ID = V1, 
+    A = V2,
+    B = V3,
+    C = V4,
+    D = V5,
+    E = V6,
+    F = V7,
+    G = V8,
+    H = V9,
+    I = V10
+  )
+
+
+# Reshape data frame into long format
+AP_party_long <- pivot_longer(AP_party_df, cols = -ID, names_to = "party_to", values_to = "WAP")
+```
 
 
 
@@ -457,6 +556,166 @@ AP_party_long <- pivot_longer(AP_party_df, cols = -Respondent, names_to = "party
 
 ```
 
+Make several data sets: 
+
+# 1 For all country-year where vote share and preference fits 
+
+```{r create data set for where vote share and preference fits}
+cases_full <- c("AUS_1996",
+                 "AUS_2004",
+                 "AUS_2007",
+                 "AUS_2013",
+                 "AUT_2008", 
+                 "AUT_2013",
+                 "AUT_2017",
+                 "CAN_1997",
+                 "CAN_2004",
+                 "CAN_2008",
+                 "CAN_2011",
+                 "CAN_2015",
+                 "DNK_1998",
+                 "DNK_2001",
+                 "DNK_2007",
+                 "FIN_2003",
+                 "FIN_2007",
+                 "FIN_2011",
+                 "FRA_2007",
+                 "DEU_1998",
+                 "DEU_2009", 
+                 "DEU_2013",
+                 "DEU_2017", 
+                 "GBR_1997", 
+                 "GBR_2005",
+                 "GBR_2015",
+                 "GRC_2009", 
+                 "GRC_2012",
+                 "GRC_2015", 
+                 "ISL_1999", 
+                 "ISL_2003",
+                 "ISL_2007",
+                 "ISL_2009",
+                 "ISL_2013",
+                 "IRL_2002",
+                 "IRL_2007",
+                 "IRL_2011",
+                 "IRL_2016",
+                 "ISR_1996",
+                 "ISR_2003",
+                 "ISR_2006",
+                 "ISR_2013",
+                 "NLD_2002",
+                 "NLD_2006",
+                 "NLD_2010",
+                 "NZL_1996",
+                 "NZL_2002",
+                 "NZL_2008",
+                 "NZL_2011",
+                 "NZL_2014",
+                 "NOR_1997",
+                 "NOR_2001",
+                 "NOR_2005",
+                 "NOR_2009",
+                 "NOR_2013",
+                 "PRT_2002",
+                 "PRT_2005",
+                 "PRT_2009",
+                 "ESP_1996",
+                 "ESP_2000",
+                 "ESP_2004",
+                 "SWE_1998",
+                 "SWE_2002",
+                 "SWE_2014",
+                 "CHE_1999",
+                 "CHE_2003",
+                 "CHE_2007",
+                 "CHE_2011",
+                 "USA_1996",
+                 "USA_2008",
+                 "USA_2012",
+                 "USA_2016"
+           )
+
+Full_selected_d <- filter(selected_d, IMD1004 %in% cases_full)
+```
+
+# 2 For France 
+
+```{r create data set for two cases from France}
+cases_fra <- c("FRA_2002", "FRA_2012")
+
+FRA_selected_d <- filter(selected_d, IMD1004 %in% cases_fra)
+```
+
+# 3 For all country_year where vote share and preference does not fit
+```{r create data set where vote share and preference do not fit}
+#cases_fail <- c("DEU_2002", "DEU_2005", "NLD_1998", "PRT_2015", "SWE_2006", "USA_2004")
+# Fail_selected_d <- filter(selected_d, IMD1004 %in% cases_fail)
+
+DEU_2002 <- c("DEU_2002")
+DEU_2005 <- c("DEU_2005")
+NLD_1998 <- c("NLD_1998")
+PRT_2015 <- c("PRT_2015")
+SWE_2006 <- c("SWE_2006")
+USA_2004 <- c("USA_2004")
+ESP_2008 <- c("ESP_2008")
+
+# Set preference columns to missing where vote share is missing
+
+# DEU_2002
+DEU_2002_d <- filter(selected_d, IMD1004 %in% DEU_2002)
+# G and H
+DEU_2002_d <- DEU_2002_d %>%
+  mutate(IMD3008_G = 99, IMD3008_H = 99)
+
+# DEU_2005
+DEU_2005_d <- filter(selected_d, IMD1004 %in% DEU_2005)
+# G 
+DEU_2002_d <- DEU_2002_d %>%
+  mutate(IMD3008_G = 99)
+
+# NLD_1998 
+NLD_1998_d <- filter(selected_d, IMD1004 %in% NLD_1998)
+# G
+NLD_1998_d <- NLD_1998_d %>%
+  mutate(IMD3008_G = 99)
+
+# PRT_2015
+PRT_2015_d <- filter(selected_d, IMD1004 %in% PRT_2015)
+# H
+PRT_2015_d <- PRT_2015_d %>%
+  mutate(IMD3008_H = 99)
+
+# SWE_2006
+SWE_2006_d <- filter(selected_d, IMD1004 %in% SWE_2006)
+# I
+SWE_2006_d <- SWE_2006_d %>%
+  mutate(IMD3008_I = 99)
+
+# USA_2004
+USA_2004_d <- filter(selected_d, IMD1004 %in% USA_2004)
+# C
+USA_2004_d <- USA_2004_d %>%
+  mutate(IMD3008_C = 99)
+
+# ESP_2008
+ESP_2008_d <- filter(selected_d, IMD1004 %in% ESP_2008)
+# G and H
+ESP_2008_d <- ESP_2008_d %>%
+  mutate(IMD3008_G = 99, IMD3008_H = 99)
+
+# Combine data sets 
+combined_df <- bind_rows(DEU_2002_d, DEU_2005_d, NLD_1998_d, PRT_2015_d, 
+                         SWE_2006_d, USA_2004_d, ESP_2008_d)
+
+rm(DEU_2002_d)
+rm(DEU_2005_d)
+rm(NLD_1998_d)
+rm(PRT_2015_d)
+rm(SWE_2006_d)
+rm(USA_2004_d)
+rm(ESP_2008_d)
+
+```
 
 
 ```{r, AP with ID correct one}
@@ -491,21 +750,19 @@ calculate_affective_polarization_party <- function(data, respondent_ids) {
     affective_polarization_scores[i, ] <- affective_polarization_row
   }
   
-#  colnames(affective_polarization_scores) <- c("ID", paste0("Affective_Polarization_", LETTERS[1:length(party_pref_vars)]))
-  #colnames(affective_polarization_scores)[1] <- "ID"  # Rename the first column only
   
   return(affective_polarization_scores)
 }
 
-affective_polarization_party_scores <- calculate_affective_polarization_party(selected_d, selected_d$IMD1005)
-print(affective_polarization_party_scores)
+AP_Full_scores <- calculate_affective_polarization_party(Full_selected_d, Full_selected_d$IMD1005)
+print(AP_Full_scores)
 
 
 # Convert matrix to data frame
 AP_party_df <- as.data.frame(affective_polarization_party_scores)
 
 # Add row names as a column
-AP_party_df$Respondent <- rownames(AP_party_df)
+#AP_party_df$Respondent <- rownames(AP_party_df)
 
 
 AP_party_df <- AP_party_df %>% 
@@ -524,9 +781,132 @@ AP_party_df <- AP_party_df %>%
 
 
 # Reshape data frame into long format
-AP_party_long <- pivot_longer(AP_party_df, cols = c(-ID, -Respondent), names_to = "party_to", values_to = "WAP")
+AP_party_long <- pivot_longer(AP_party_df, cols = -ID, names_to = "party_to", values_to = "WAP")
 
 ```
+
+
+```{r, AP for two cases of France}
+calculate_AP_FRA <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5005_A", "IMD5005_B", "IMD5005_C", "IMD5005_D", 
+                       "IMD5005_E", "IMD5005_F", "IMD5005_G", "IMD5005_H", "IMD5005_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars]) 
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Calculate the average like-dislike score for the current respondent
+    valid_ratings <- which(!is.na(party_pref) & party_pref != 99)
+    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    valid_parties <- party_pref != 99
+    affective_polarization_row[valid_parties] <- sqrt(vote_share[valid_parties] * (party_pref[valid_parties] - likei)^2)
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+#  colnames(affective_polarization_scores) <- c("ID", paste0("Affective_Polarization_", LETTERS[1:length(party_pref_vars)]))
+  #colnames(affective_polarization_scores)[1] <- "ID"  # Rename the first column only
+  
+  return(affective_polarization_scores)
+}
+
+AP_FRA_scores <- calculate_AP_FRA(FRA_selected_d, FRA_selected_d$IMD1005)
+print(AP_FRA_scores)
+
+# partei of null setzten 
+```
+
+
+```{r, AP special six }
+calculate_affective_polarization_party <- function(data, respondent_ids) {
+  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
+                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
+  
+  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
+                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
+  
+  affective_polarization_scores <- matrix(0, nrow = nrow(data), ncol = length(party_pref_vars) + 1)  # +1 for the respondent ID
+  
+  for (i in 1:nrow(data)) {
+    party_pref <- unlist(data[i, party_pref_vars])
+    vote_share <- unlist(data[i, vote_share_vars]) 
+    
+    # Initialize affective polarization scores for the current respondent
+    affective_polarization_row <- rep(0, length(party_pref))
+    
+    # Calculate the average like-dislike score for the current respondent
+    valid_ratings <- which(!is.na(party_pref) & party_pref != 99)
+    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
+    
+    # Calculate the affective polarization score for non-missing party preferences
+    valid_parties <- party_pref != 99
+    affective_polarization_row[valid_parties] <- sqrt(vote_share[valid_parties] * (party_pref[valid_parties] - likei)^2)
+    
+    # Add respondent ID to the beginning of the row
+    affective_polarization_row <- c(respondent_ids[i], affective_polarization_row)
+    
+    # Store the affective polarization scores for the current respondent
+    affective_polarization_scores[i, ] <- affective_polarization_row
+  }
+  
+  
+  return(affective_polarization_scores)
+}
+
+AP_six_spe <- calculate_affective_polarization_party(combined_df, combined_df$IMD1005)
+print(AP_six_spe)
+```
+
+
+
+
+
+
+
+```{r, combine matricies}
+
+AP_all_scores <- rbind(AP_Full_scores, AP_FRA_scores, AP_six_spe)# AP_Fail_scores #  AP_FRA_scores
+
+# Convert matrix to data frame
+AP_party_df <- as.data.frame(AP_all_scores)
+
+# Add row names as a column
+#AP_party_df$Respondent <- rownames(AP_party_df)
+
+
+AP_party_df <- AP_party_df %>% 
+  rename(
+    ID = V1, 
+    A = V2,
+    B = V3,
+    C = V4,
+    D = V5,
+    E = V6,
+    F = V7,
+    G = V8,
+    H = V9,
+    I = V10
+  )
+
+
+# Reshape data frame into long format
+AP_party_long <- pivot_longer(AP_party_df, cols = -ID, names_to = "party_to", values_to = "WAP")
+```
+
 
 
 
@@ -534,6 +914,23 @@ AP_party_long <- pivot_longer(AP_party_df, cols = c(-ID, -Respondent), names_to 
 
 # Perform the merge
 merged_data <- merge(AP_party_long, multilevel_data, by = c("party_to", "ID"))
+
+```
+
+
+```{r, data wrangeling merged_data}
+## Removing smaller parties
+
+merged_data <- merged_data %>%
+  filter(to_prior_seats >= 4) %>%
+  select(rile_distance_s, prior_coalition, prior_opposition, econ_distance_s, society_distance_s,
+         year, country, party_dislike, party_like, cntryyr, to_pfeml, to_prior_seats, to_mp_number, WAP) %>%
+  na.omit()
+
+# check
+sum(is.na(merged_data$to_pfeml))
+
+hist(merged_data[merged_data$cntryyr == "Great Britain2015", "to_pfeml"])
 
 ```
 
@@ -547,6 +944,18 @@ summary(table1.1)
 
 table1 <- lm(WAP ~ to_pfeml + as.factor(cntryyr), data = merged_data)
 summary(table1)
+
+merged_data$to_pfeml <- as.numeric(merged_data$to_pfeml)
+merged_data$WAP <- as.numeric(merged_data$WAP)
+
+mlm_1 <- lmer(WAP ~ to_pfeml +
+                (1 + to_pfeml | country),
+              data = merged_data)
+
+summary(mlm_1)
+
+ranef(mlm_1)
+
 
 
 
@@ -564,59 +973,427 @@ print(count2)
 
 summary(merged_data$cntryyr)
 
+#load("raw-data/dyadic_data_1-4-22.Rdata")
 
 
-```
-
-
-
-```{r, simulation function}
-
-sim_function <- function(lm_obj, nsim = 1000, scenario){
+print_values_for_condition <- function(data, condition_col, condition_val, target_col) {
+  # Filter the data based on the condition
+  filtered_data <- data[data[[condition_col]] == condition_val, ]
   
-  # Step 1: Get the regression coefficients
-  beta_hat <- coef(lm_obj)
-  
-  # Step 2: Generate sampling distribution
-  
-  # Step 2.1: Get the variance-covariance matrix.
-  V_hat <-  vcov(lm_obj) 
-  
-  # Step 2.2: Draw from the multivariate normal distribution.
-  S <- mvrnorm(nsim, beta_hat, V_hat)
-
-  # Step 3: Choose interesting covariate values. 
-  # Make sure the matrix multiplication also works for single scenarios
-  if(is.null(nrow(scenario))){
-    scenario <- matrix(scenario, nrow = 1)
+  # Print the values of the target column for the filtered rows
+  if (nrow(filtered_data) > 0) {
+    print(filtered_data[[target_col]])
+  } else {
+    print(paste("No rows found where", condition_col, "is equal to", condition_val))
   }
-  
-  # Print a message if the scenario does not fit the regression.
-  if(ncol(scenario) != length(lm_obj$coefficients)){
-    return(cat("The scenario has the wrong number of variables."))
-  } 
-  
-  # Step 4: Calculate Quantities of Interest - 
-  # Expected Values
-  EV <- S %*% t(scenario)
-  return(EV)
 }
 
+
+# Print the values of IMD5001_A for rows where IMD1004 is "France2002"
+print_values_for_condition(selected_d, "IMD1004", "FRA_2002", "IMD5005_I")
+
+print_values_for_condition(selected_d, "IMD1004", "FRA_2012", "IMD5001_A")
+
+print_values_for_condition(merged_data, "cntryyr", "Spain2008", "to_pfeml")
+
 ```
 
-```{r, scenario}
 
-class(merged_data$to_pfeml)
-mean(merged_data$to_pfeml)
+```{r, simulation (working)}
+nsim <- 10000
+
+# Step 1: Get the regression coefficients
+#   NOTE: We are only using fixed effects
+beta_hat <- fixef(mlm_1)
+
+# Step 2: Generate sampling distribution
+
+# Step 2.1: Get the variance-covariance matrix.
+V_hat <-  vcov(mlm_1)
+
+# Step 2.2: Draw from the multivariate normal distribution.
+S <- mvrnorm(nsim, beta_hat, V_hat)
+
+# Additional Step 2.3: Add random effects
+
+# varying intercept
+S[, "(Intercept)"] <- 
+  S[, "(Intercept)"] + 
+  ranef(mlm_1)$country["Spain", "(Intercept)"]
+# varying slope
+S[, "to_pfeml"] <- 
+  S[, "to_pfeml"] + 
+  ranef(mlm_1)$country["Spain", "to_pfeml"]
 
 
-s1 <- c(1, 0.15, rep(0, 19))
-s2 <- c(1, 0.5, rep(0,19))
 
-ev1 <- sim_function(table2, scenario = s1)
-ev2 <- sim_function(table2, scenario = s2)
+# Step 3: Choose interesting covariate values. 
+# Make sure the matrix multiplication also works for single scenarios
+min_to_pfeml <- min(merged_data$to_pfeml[merged_data$country == "Spain"], na.rm = T)
+max_to_pfeml <- max(merged_data$to_pfeml[merged_data$country == "Spain"], na.rm = T)
+to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml,
+                     length.out = 100)
 
-fd <- ev2- ev1
+scenario <- cbind(1, to_pfeml_seq)
+
+# Step 4: Calculate Quantities of Interest - 
+# Expected Values
+EV <- S %*% t(scenario)
+
+# Step 5: Summarize
+ev_mean <- apply(EV, 2, mean)
+ev_ci <- apply(EV, 2, quantile, c(0.025, 0.975))
+```
+
+```{r, plot simulation}
+plot(x = to_pfeml_seq,
+     y = ev_mean,
+     ylim = c(0.1, 1),
+     xlim = c(0.0, 0.5),
+     type = "l",
+     lwd = 1.5,
+     main = "Female share and WAP in Spain",
+     font.main = 1,
+     ylab = "Expected value of WAP",
+     xlab = "Average female share",
+     las = 1)
+lines(x = to_pfeml_seq,
+      y = ev_ci["2.5%",],
+      lty = "dashed",
+      lwd = 1.5)
+lines(x = to_pfeml_seq,
+      y = ev_ci["97.5%",],
+      lty = "dashed",
+      lwd = 1.5)
+```
+
+
+
+```{r simulation with years 20 countries}
+# Step 1: Modify the Model
+mlm_1 <- lmer(WAP ~ to_pfeml  + (1 + to_pfeml | country), data = merged_data)
+summary(mlm_1)
+
+# Step 2: Update the Simulation Process
+nsim <- 10000
+
+# Step 2.1: Get the regression coefficients and variance-covariance matrix
+beta_hat <- fixef(mlm_1)
+V_hat <- vcov(mlm_1)
+
+# Step 2.2: Draw from the multivariate normal distribution
+S <- mvrnorm(nsim, beta_hat, V_hat)
+
+# Step 2.3: Add random effects for all countries
+country_names <- unique(merged_data$country)
+num_countries <- length(country_names)
+
+# Step 3: Create Covariate Scenarios for Years
+min_to_pfeml <- min(merged_data$to_pfeml, na.rm = TRUE)
+max_to_pfeml <- max(merged_data$to_pfeml, na.rm = TRUE)
+to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml, length.out = 100)
+
+years <- seq(2000, 2020, by = 1)
+
+# Step 4: Calculate Expected Values for Each Country
+EV_list <- list()
+ev_mean_list <- list()
+ev_ci_list <- list()
+
+for (i in 1:num_countries) {
+  country <- country_names[i]
+  
+  EV_country <- matrix(NA, nrow = length(to_pfeml_seq), ncol = length(years))
+  for (j in 1:length(years)) {
+    year <- years[j]
+    
+    # Filter data for the specific country and year
+    country_data <- merged_data[merged_data$country == country & merged_data$year == year, ]
+    
+    # Create scenario for the country and year
+    scenario <- cbind(1, to_pfeml_seq, rep(year, length(to_pfeml_seq)))
+    
+    # Calculate expected values
+    EV <- S %*% t(scenario)
+    
+    # Store the results
+    EV_country[, j] <- apply(EV, 2, mean)
+  }
+  
+  EV_list[[country]] <- EV_country
+}
+
+# Set up the plot layout with adjusted margins
+par(mfrow = c(5, 4), mar = c(4, 4, 2, 1))  
+
+for (i in 1:num_countries) {
+  country <- country_names[i]
+  EV_country <- EV_list[[country]]
+  
+  plot(NULL, xlim = range(to_pfeml_seq), ylim = range(unlist(EV_list)), type = "n",
+       main = paste("Female share and WAP in", country),
+       xlab = "Average female share",
+       ylab = "Expected value of WAP")
+  
+  for (j in 1:length(years)) {
+    lines(x = to_pfeml_seq, y = EV_country[, j], col = j, lwd = 1.5)
+  }
+}
+
+# Reset plot layout to default
+par(mfrow = c(1, 1))
+
+
+```
+
+
+```{r, only country without confidence interval }
+
+# Step 1: Modify the Model
+mlm_1 <- lmer(WAP ~ to_pfeml + (1 + to_pfeml | country), data = merged_data)
+summary(mlm_1)
+
+# Step 2: Update the Simulation Process
+nsim <- 10000
+
+# Step 2.1: Get the regression coefficients and variance-covariance matrix
+beta_hat <- fixef(mlm_1)
+V_hat <- vcov(mlm_1)
+
+# Step 2.2: Draw from the multivariate normal distribution
+S <- mvrnorm(nsim, beta_hat, V_hat)
+
+# Step 2.3: Add random effects for all countries
+country_names <- unique(merged_data$country)
+num_countries <- length(country_names)
+
+# Step 3: Create Covariate Scenarios for Countries
+min_to_pfeml <- min(merged_data$to_pfeml, na.rm = TRUE)
+max_to_pfeml <- max(merged_data$to_pfeml, na.rm = TRUE)
+to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml, length.out = 100)
+
+# Step 4: Calculate Expected Values for Each Country
+EV_list <- list()
+ev_mean_list <- list()
+ev_ci_list <- list()
+
+for (i in 1:num_countries) {
+  country <- country_names[i]
+  
+  EV_country <- matrix(NA, nrow = length(to_pfeml_seq), ncol = 1)
+  scenario <- cbind(1, to_pfeml_seq)
+  
+  for (j in 1:nsim) {
+    # Add random effects for the country
+    S_sample <- S[j, ]
+    S_sample[1] <- S_sample[1] + ranef(mlm_1)$country[country, "(Intercept)"]
+    S_sample[2] <- S_sample[2] + ranef(mlm_1)$country[country, "to_pfeml"]
+    
+    # Calculate expected values
+    EV <- S_sample %*% t(scenario)
+    
+    # Store the results
+    EV_country[, 1] <- EV_country[, 1] + EV[, 1]
+  }
+  
+  EV_list[[country]] <- EV_country / nsim
+}
+
+# Step 5: Plot the Results for Each Country
+par(mfrow = c(5, 4), mar = c(4, 4, 2, 1))  # Set up the plot layout
+
+for (i in 1:num_countries) {
+  country <- country_names[i]
+  EV_country <- EV_list[[country]]
+  
+  plot(to_pfeml_seq, EV_country[, 1], type = "l",
+       main = paste("Female share and WAP in", country),
+       xlab = "Average female share",
+       ylab = "Expected value of WAP")
+}
+
+# Reset plot layout to default
+par(mfrow = c(1, 1))
+
+```
+
+
+```{r, simulation of country with CI}
+
+# Step 1: Modify the Model
+mlm_1 <- lmer(WAP ~ to_pfeml + (1 + to_pfeml | country), data = merged_data)
+summary(mlm_1)
+
+# Step 2: Update the Simulation Process
+nsim <- 1000  # Adjust the number of simulations as needed
+
+# Step 2.1: Get the regression coefficients and variance-covariance matrix
+beta_hat <- fixef(mlm_1)
+V_hat <- vcov(mlm_1)
+
+# Step 2.2: Draw from the multivariate normal distribution
+S <- mvrnorm(nsim, beta_hat, V_hat)
+
+# Step 2.3: Add random effects for all countries
+country_names <- unique(merged_data$country)
+num_countries <- length(country_names)
+
+# Step 3: Create Covariate Scenarios for Countries
+scenario_list <- list()
+
+for (i in 1:num_countries) {
+  country <- country_names[i]
+  
+  # Filter data for the specific country
+  country_data <- merged_data[merged_data$country == country, ]
+  
+  # Calculate min and max to_pfeml for the country
+  min_to_pfeml_country <- min(country_data$to_pfeml, na.rm = TRUE)
+  max_to_pfeml_country <- max(country_data$to_pfeml, na.rm = TRUE)
+  
+  # Create scenario for the country
+  to_pfeml_seq_country <- seq(min_to_pfeml_country, max_to_pfeml_country, length.out = 100)
+  scenario_country <- cbind(1, to_pfeml_seq_country)
+  
+  # Store the scenario
+  scenario_list[[country]] <- scenario_country
+}
+
+# Step 4: Calculate Expected Values and Confidence Intervals for Each Country
+EV_list <- list()
+ci_list <- list()
+
+for (i in 1:num_countries) {
+  country <- country_names[i]
+  scenario_country <- scenario_list[[country]]
+  
+  EV_country <- matrix(NA, nrow = length(scenario_country), ncol = nsim)
+  
+  for (j in 1:nsim) {
+    # Add random effects for the country
+    S_sample <- S[j, ]
+    S_sample[1] <- S_sample[1] + ranef(mlm_1)$country[country, "(Intercept)"]
+    S_sample[2] <- S_sample[2] + ranef(mlm_1)$country[country, "to_pfeml"]
+    
+    # Calculate expected values
+    EV <- S_sample %*% t(scenario_country)
+    
+    
+    # Store the results
+    EV_country[, j] <- EV[, 1]
+  }
+  
+  # Calculate confidence intervals
+  ci <- apply(EV_country, 1, quantile, c(0.025, 0.975))
+  
+  # Store the results
+  EV_list[[country]] <- rowMeans(EV_country)
+  ci_list[[country]] <- ci
+}
+
+# Step 5: Plot the Results for Each Country
+par(mfrow = c(5, 4), mar = c(4, 4, 2, 1))  # Adjust margin size
+
+for (i in 1:num_countries) {
+  country <- country_names[i]
+  
+  # Get country-specific scenario, EV, and CI
+  scenario_country <- scenario_list[[country]]
+  EV_country <- EV_list[[country]]
+  ci_country <- ci_list[[country]]
+  
+  # Plot expected values and confidence intervals
+  plot(scenario_country[, 2], EV_country, type = "l", col = "black",
+       main = paste("Female share and WAP in", country),
+       xlab = "Average female share",
+       ylab = "Expected value of WAP")
+  
+  lines(scenario_country[, 2], ci_country[1, ], col = "black", lty = "dashed")
+  lines(scenario_country[, 2], ci_country[2, ], col = "black", lty = "dashed")
+}
+
+# Reset plot layout to default
+par(mfrow = c(1, 1))
+
+
+
+
+```
+
+
+```{r, simulation correct one yet}
+
+# List of countries
+countries <- c("Australia", "Austria", "Canada", "Switzerland", "Germany", "Denmark", 
+               "Finland", "France", "Great Britain", "Greece", "Ireland", "Iceland", 
+               "Israel", "Netherlands", "New Zealand", "Norway", "Portugal", "Spain", 
+               "Sweden", "United States of America") 
+
+# Number of simulations
+nsim <- 10000
+
+# Step 1: Get the regression coefficients
+# NOTE: We are only using fixed effects
+beta_hat <- fixef(mlm_1)
+
+# Step 2: Generate sampling distribution
+# Step 2.1: Get the variance-covariance matrix
+V_hat <- vcov(mlm_1)
+
+# Step 2.2: Draw from the multivariate normal distribution
+S <- mvrnorm(nsim, beta_hat, V_hat)
+
+# Function to plot for a given country
+plot_country <- function(country) {
+  # Add random effects for the country
+  S_country <- S
+  S_country[, "(Intercept)"] <- S_country[, "(Intercept)"] + ranef(mlm_1)$country[country, "(Intercept)"]
+  S_country[, "to_pfeml"] <- S_country[, "to_pfeml"] + ranef(mlm_1)$country[country, "to_pfeml"]
+  
+  # Get the range of 'to_pfeml' for the country
+  min_to_pfeml <- min(merged_data$to_pfeml[merged_data$country == country], na.rm = TRUE)
+  max_to_pfeml <- max(merged_data$to_pfeml[merged_data$country == country], na.rm = TRUE)
+  to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml, length.out = 100)
+  
+  
+  # Create the scenario matrix
+  scenario <- cbind(1, to_pfeml_seq)
+  
+  # Calculate Quantities of Interest - Expected Values
+  EV <- S_country %*% t(scenario)
+  
+  # Summarize
+  ev_mean <- apply(EV, 2, mean)
+  ev_ci <- apply(EV, 2, quantile, c(0.025, 0.975))
+  
+  # Plot
+  plot(x = to_pfeml_seq,
+       y = ev_mean,
+       ylim = c(0.1, 5),
+       xlim = c(0.0, 0.8),
+       type = "l",
+       lwd = 1.5,
+       main = paste("Female share and WAP in", country),
+       font.main = 1,
+       ylab = "Expected value of WAP",
+       xlab = "Average female share",
+       las = 1)
+  lines(x = to_pfeml_seq,
+        y = ev_ci["2.5%", ],
+        lty = "dashed",
+        lwd = 1.5)
+  lines(x = to_pfeml_seq,
+        y = ev_ci["97.5%", ],
+        lty = "dashed",
+        lwd = 1.5)
+}
+
+# Loop through each country and plot
+par(mfrow = c(5, 4), mar = c(5, 5, 2, 1))# Adjust layout to fit all plots in one view
+for (country in countries) {
+  plot_country(country)
+}
+
 ```
 
 
@@ -648,7 +1425,6 @@ ggplot(data = AP_party_long, aes(x = party_to, y = Respondent, fill = WAP)) +
 
 
 ```
-
 
 
 ```{r, try to plot the data unsing KDE}
