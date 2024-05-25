@@ -842,7 +842,6 @@ save(pp_check_subset, file = "pp_check_subset.png")
 #library(brms)
 #library(MASS)  
 
-# Assuming merged_data contains your data
 
 # Filter data to include only the countries with the highest and lowest to_pfeml share
 highest_lowest_countries <- merged_data %>%
