@@ -1,6 +1,6 @@
 ---
 title: "First Try Replication"
-author: "Nikolina Filiposki but code from previous authors (partly)"
+author: "Nikolina Filiposki"
 date: "2024-04-07"
 output:
   html_document:
@@ -150,7 +150,7 @@ rm(selected_dataset)
 
 
 
- Wagner (2021)
+ Wagner (2021) has the following formular:
 
 
 $$
@@ -170,53 +170,6 @@ where:
 $$
 like_i = \sum_{p=1}^{P} (v_p \times like_{ip})
 $$
-
-
-
-
-```{r, spread like Wagner}
-calculate_weighted_AP <- function(data) {
-  # List of party preference variables (IMD3008_A to IMD3008_I)
-  party_pref_vars <- c("IMD3008_A", "IMD3008_B", "IMD3008_C", "IMD3008_D", 
-                       "IMD3008_E", "IMD3008_F", "IMD3008_G", "IMD3008_H", "IMD3008_I")
-  
-  # List of vote share variables (IMD5001_A to IMD5001_I)
-  vote_share_vars <- c("IMD5001_A", "IMD5001_B", "IMD5001_C", "IMD5001_D", 
-                       "IMD5001_E", "IMD5001_F", "IMD5001_G", "IMD5001_H", "IMD5001_I")
-  
-  # Initialize a vector to store weighted AP scores for each respondent
-  weighted_AP_scores <- numeric(nrow(data))
-  
-  # Loop through each respondent
-  for (i in 1:nrow(data)) {
-    # Get party preference and vote share data for the current respondent
-    party_pref <- unlist(data[i, party_pref_vars])
-    vote_share <- unlist(data[i, vote_share_vars])
-    
-    # Exclude missing values (99)
-    valid_ratings <- which(!is.na(party_pref) & party_pref != 99)
-    
-    # Calculate the weighted average party affect for the current respondent
-    likei <- sum(party_pref[valid_ratings] * vote_share[valid_ratings])
-    
-    # Calculate the spread for the current respondent
-    spread_i <- sqrt(sum((party_pref[valid_ratings] - likei)^2 * vote_share[valid_ratings]))
-    
-    # Store the weighted AP score for the current respondent
-    weighted_AP_scores[i] <- spread_i
-  }
-  
-  # Return the weighted AP scores for each respondent
-  return(weighted_AP_scores)
-}
-
-
-weighted_AP_scores <- calculate_weighted_AP(selected_d)
-print(weighted_AP_scores)
-
-```
-
-
 
 Need that score for dyadic data (own approach from Wagner formula): 
 
@@ -621,6 +574,11 @@ merged_data$WAP <- as.numeric(merged_data$WAP)
 # check
 sum(is.na(merged_data$to_pfeml))
 
+# Transform WAP because skewed
+merged_data$log_WAP <- log1p(merged_data$WAP)
+hist(log1p(merged_data$log_WAP), breaks=50, main="Transformed WAP")
+
+# We need RAM for this project, get rid of what we do not need anymore
 rm(AP_all_scores)
 rm(AP_party_df)
 rm(AP_party_long)
@@ -628,77 +586,19 @@ rm(multilevel_data)
 rm(selected_d)
 
 ```
-```{r}
-hist(merged_data[merged_data$cntryyr == "Great Britain2015", "to_pfeml"])
+```{r, chunk to test stuff}
+#hist(merged_data[merged_data$cntryyr == "Great Britain2015", "to_pfeml"])
 
 #hist(merged_data[merged_data$cntryyr== "Great Britain2015", "WAP"] )
 
-
-m <- merged_data[merged_data$cntryyr == "Great Britain2015",  c("cntryyr", "WAP")]
-
 #hist(merged_data[merged_data$cntryyr, "WAP"])
 
-m <- merged_data[, c("country", "year", "to_pfeml", "WAP")]
+#m <- merged_data[, c("country", "year", "to_pfeml", "WAP")]
+
+#q <- merged_data[, c("country", "year", "WAP_transformed", "to_pfeml")]
 ```
 
 
-```{r}
-hist(merged_data[merged_data$cntryyr == "Australia1996", "WAP"])
-```
- 
-
-
-```{r, perform first multilevel analysis}
-
-# Adams et al. 2023 
-#table1.1 <-lm(party_like ~ to_pfeml + as.factor(cntryyr), data = merged_data)
-#summary(table1.1)
-
-
-#table1 <- lm(WAP ~ to_pfeml + as.factor(cntryyr), data = merged_data)
-#summary(table1)
-
-
-mlm_1 <- lmer(WAP ~ to_pfeml +
-                (1 + to_pfeml | cntryyr),
-              data = merged_data)
-
-summary(mlm_1)
-
-ranef(mlm_1)
-
-
-
-
-#table2 <- lm(WAP ~ to_pfeml + as.factor(country), data = merged_data)
-#summary(table2)
-
-#table3 <- lm(WAP ~ to_pfeml + as.factor(year), data = merged_data)
-#summary(table3)
-
-
-#load("raw-data/dyadic_data_1-4-22.Rdata")
-```
-
-
-```{r}
-
-# Fit the model
-mlm_1 <- lmer(WAP ~ to_pfeml + (1 + to_pfeml | cntryyr), data = merged_data)
-
-# Extract variance components
-var_comp <- as.data.frame(VarCorr(mlm_1))
-
-# Extract the variance of the intercept for 'cntryyr'
-var_cntryyr <- var_comp[var_comp$grp == "cntryyr" & var_comp$var1 == "(Intercept)" & is.na(var_comp$var2), "vcov"]
-
-# Extract residual variance
-var_residual <- attr(VarCorr(mlm_1), "sc")^2
-
-# Calculate ICC
-ICC <- var_cntryyr / (var_cntryyr + var_residual)
-print(ICC)
-```
 
 Truncated model: 
 
@@ -718,82 +618,11 @@ $$
 where $j$ indexes the groups and $i$  indexes the individual observations.
 
 
-```{r, full model without priors}
-#install.packages("Brobdingnag")
-#install.packages("brms", dependencies = TRUE)
-#library(brms)
+Attention!
+The following chunks need several hours to days to run because of brms()!
+Please install RTools and brms() as well as Brobdingnag() to run those chunks (this will start automatically if you run the chunk and have no RTools implementation yet). Make sure that you path matches with your system variables and that you run the code on all available cores with future() package to enhance the calculation! 
 
-plan(multisession, workers = 4)
-
-# Define the model with truncation bounds
-truncated_model <- brm(
-  bf(WAP | trunc(lb = 0, ub = 4) ~ to_pfeml + (1 + to_pfeml | cntryyr)),
-  data = merged_data,
-  family = gaussian(),  # Assuming WAP is normally distributed
-  chains = 4,          # Number of MCMC chains
-  iter = 2000,
-  warmup = 1000,# Number of iterations per chain
-  cores = 4, 
-  save_model = "full_model.rds"
-)
-
-
-# In case of interruptions, reload the saved model
-# truncated_model_full <- readRDS("full_model.rds")
-
-# Summarize the model
-summary(truncated_model)
-
-save(truncated_model, file = "truncated_model.RData")
-#load("truncated_model.RData")
-
-summary(truncated_model)$rhat
-
-summary(truncated_model)
-
-pp_check(truncated_model)
-
-residuals <- residuals(truncated_model)
-plot(residuals)
-
-plot(truncated_model)
-```
-
-```{r, brm with priors}
-priors <- c(
-  prior(normal(0, 1), class = "b"),          # Coefficients
-  prior(cauchy(0, 1), class = "sd"),         # Standard deviations
-  prior(lkj(2), class = "cor")               # Correlations
-)
-
-
-truncated_model_with_priors <- brm(
-  bf(log_WAP | trunc(lb = log1p(0), ub = log1p(4)) ~ to_pfeml + (1 + to_pfeml | cntryyr)),
-  data = merged_data,
-  family = gaussian(),
-  chains = 4,
-  iter = 4000,
-  warmup = 1000,
-  cores = 4,
-  save_model = "full_model_transformed.rds",
-  prior = priors
-)
-
-
-m <- merged_data[merged_data$WAP >= 0 & merged_data$WAP <= 1, c("country", "year", "WAP", "to_pfeml")]
-n <- merged_data[merged_data$WAP >= 1 & merged_data$WAP <= 2, c("country", "year", "WAP", "to_pfeml")]
-o <- merged_data[merged_data$WAP >= 2 & merged_data$WAP <= 3, c("country", "year", "WAP", "to_pfeml")]
-p <- merged_data[merged_data$WAP >= 3 & merged_data$WAP <= 4, c("country", "year", "WAP", "to_pfeml")]
-
-
-merged_data$log_WAP <- log1p(merged_data$WAP)
-
-q <- merged_data[, c("country", "year", "WAP_transformed", "to_pfeml")]
-
-hist(log1p(merged_data$log_WAP), breaks=50, main="Transformed WAP")
-
-
-```
+You can also just reload the already previously calculated outcomes with load() from RProject and proceed as usual. 
 
 ```{r, test truncated model with subset and varying intercept}
 # Use a random subset of 10% of the data for testing
@@ -836,188 +665,171 @@ save(pp_check_subset, file = "pp_check_subset.png")
 
 ```
 
-
-```{r}
-#library(dplyr)
+```{r, full model with default priors (did not converge because to less iter)}
+#install.packages("Brobdingnag")
+#install.packages("brms", dependencies = TRUE)
 #library(brms)
-#library(MASS)  
+
+plan(multisession, workers = 4)
+
+# Define the model with truncation bounds
+truncated_model <- brm(
+  bf(WAP | trunc(lb = 0, ub = 4) ~ to_pfeml + (1 + to_pfeml | cntryyr)),
+  data = merged_data,
+  family = gaussian(),  # Assuming WAP is normally distributed
+  chains = 4,          # Number of MCMC chains
+  iter = 2000,
+  warmup = 1000,# Number of iterations per chain
+  cores = 4, 
+  save_model = "full_model.rds"
+)
 
 
-# Filter data to include only the countries with the highest and lowest to_pfeml share
-highest_lowest_countries <- merged_data %>%
-  group_by(cntryyr) %>%
-  summarise(avg_to_pfeml = mean(to_pfeml, na.rm = TRUE)) %>%
-  top_n(2, avg_to_pfeml) %>%
-  pull(cntryyr)
+# In case of interruptions, reload the saved model
+# truncated_model_full <- readRDS("full_model.rds")
 
-filtered_data <- merged_data %>%
-  filter(cntryyr %in% highest_lowest_countries)
+# Summarize the model
+summary(truncated_model)
 
-# Fit the model (if not already fitted)
-# truncated_model <- brm(
-#   bf(WAP | trunc(lb = 0, ub = 4) ~ to_pfeml + (1 + to_pfeml | cntryyr)),
-#   data = filtered_data,
-#   family = gaussian(),
-#   chains = 4,
-#   iter = 2000
-# )
+save(truncated_model, file = "truncated_model.RData")
+#load("truncated_model.RData")
 
-# Step 1: Get the regression coefficients (fixed effects)
-beta_hat <- fixef(truncated_model)
+summary(truncated_model)$rhat
 
-# Step 2.1: Get the variance-covariance matrix
-V_hat <- vcov(truncated_model)
+summary(truncated_model)
 
-# Step 2.2: Draw samples from the multivariate normal distribution
-nsim <- 10000
-S <- mvrnorm(nsim, beta_hat, V_hat)
+pp_check(truncated_model)
 
-# Step 3: Add random effects
-random_effects <- ranef(truncated_model)$cntryyr[highest_lowest_countries, , drop = FALSE]
-S[, "(Intercept)"] <- S[, "(Intercept)"] + random_effects[, "(Intercept)"]
-S[, "to_pfeml"] <- S[, "to_pfeml"] + random_effects[, "to_pfeml"]
+residuals <- residuals(truncated_model)
+plot(residuals)
 
-# Step 4: Choose interesting covariate values
-min_to_pfeml <- min(filtered_data$to_pfeml, na.rm = TRUE)
-max_to_pfeml <- max(filtered_data$to_pfeml, na.rm = TRUE)
-to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml, length.out = 100)
-scenario <- cbind(1, to_pfeml_seq)
+plot(truncated_model)
+```
 
-# Step 5: Calculate Quantities of Interest - Expected Values
-EV <- S %*% t(scenario)
+```{r, brm with priors (correct one)}
+priors <- c(
+  prior(normal(0, 1), class = "b"),          # Coefficients
+  prior(cauchy(0, 1), class = "sd"),         # Standard deviations
+  prior(lkj(2), class = "cor")               # Correlations
+)
 
-# Step 6: Summarize
-ev_mean <- apply(EV, 2, mean)
-ev_ci <- apply(EV, 2, quantile, c(0.025, 0.975))
+
+truncated_model_with_priors <- brm(
+  bf(log_WAP | trunc(lb = log1p(0), ub = log1p(4)) ~ to_pfeml + (1 + to_pfeml | cntryyr)),
+  data = merged_data,
+  family = gaussian(),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = 4,
+  save_model = "full_model_transformed.rds",
+  prior = priors
+)
+
+#saveRDS(truncated_model_with_priors, file = "truncated_model_with_priors.rds")
+
+# save to .RData
+save(truncated_model_with_priors, file = "truncated_model_full.RData")
+
+# quick summary
+summary(truncated_model_with_priors)
+
+# Plot autocorrelation
+mcmc_plot <- mcmc_plot(truncated_model_with_priors, type = "acf")
+save(mcmc_plot, file = "mcmc_plot_full.png")
+
+pairs(truncated_model_with_priors)
+
+pp_check(truncated_model_with_priors)
+save(pp_check, file = "pp_check_full.png")
+
+# Plot trace plots to inspect chains visually
+truncated_model_full <- plot(truncated_model_with_priors)
+save(truncated_model_with_priors, file = "truncated_model_plot1.png")
+
+residuals <- residuals(truncated_model_with_priors)
+plot(residuals)
 
 ```
 
+```{r, correct plot}
+# Define the sequence of to_pfeml values
+to_pfeml_seq <- seq(from = min(merged_data$to_pfeml, na.rm = TRUE),
+                    to = max(merged_data$to_pfeml, na.rm = TRUE),
+                    length.out = 100)
+
+# Extract unique levels of the grouping variable
+unique_cntryyr <- unique(merged_data$cntryyr)
+
+# Create a new data frame with the sequence of to_pfeml values for each level of cntryyr
+new_data <- expand.grid(to_pfeml = to_pfeml_seq, cntryyr = unique_cntryyr)
+
+# Function to process data in batches
+batch_predict <- function(model, data, batch_size = 1000) {
+  n <- nrow(data)
+  results <- list()
+  
+  for (i in seq(1, n, by = batch_size)) {
+    print(paste("Processing batch:", i, "to", min(i + batch_size - 1, n)))
+    batch_data <- data[i:min(i + batch_size - 1, n), ]
+    predictions <- posterior_predict(model, newdata = batch_data, draws = 100)
+    results[[length(results) + 1]] <- predictions
+  }
+  
+  do.call(cbind, results)
+}
+
+# Generate predictions for the new data in batches
+predicted_samples <- batch_predict(truncated_model_with_priors, new_data, batch_size = 1000)
+
+# Save memory by clearing the original data frame
+#rm(merged_data)
+#gc()
+
+# Compute mean and confidence intervals for predictions across all cntryyr levels
+predicted_mean <- apply(predicted_samples, 2, mean, na.rm = TRUE)
+lower_ci <- apply(predicted_samples, 2, quantile, probs = 0.025, na.rm = TRUE)
+upper_ci <- apply(predicted_samples, 2, quantile, probs = 0.975, na.rm = TRUE)
+
+# Reshape the predicted mean and confidence intervals to match the sequence length
+predicted_mean <- matrix(predicted_mean, ncol = length(to_pfeml_seq), byrow = TRUE)
+lower_ci <- matrix(lower_ci, ncol = length(to_pfeml_seq), byrow = TRUE)
+upper_ci <- matrix(upper_ci, ncol = length(to_pfeml_seq), byrow = TRUE)
+
+# Average across all cntryyr levels
+predicted_mean <- apply(predicted_mean, 2, mean, na.rm = TRUE)
+lower_ci <- apply(lower_ci, 2, mean, na.rm = TRUE)
+upper_ci <- apply(upper_ci, 2, mean, na.rm = TRUE)
+
+# Plot mean predicted values with confidence intervals
+predicted_WAP_batch <- plot(to_pfeml_seq, predicted_mean, type = "l",
+     #ylim = range(c(lower_ci, upper_ci)),
+     ylim = c(-0.5, 1.5),
+     main = "Predicted WAP against Female Delegates Proportion",
+     xlab = "Female Delegates Proportion",
+     ylab = "Predicted WAP",
+     col = "black", lwd = 2)
+lines(to_pfeml_seq, lower_ci, col = "black", lty = 2)
+lines(to_pfeml_seq, upper_ci, col = "black", lty = 2)
+
+save(predicted_WAP_batch, file = "Predicted WAP batch.jpg")
 
 
-```{r, qq-plot}
-qqnorm(resid(mlm_1)) ; qqline(resid(mlm_1), col="red")
+# to save this use ggplot-plot
+# Load ggplot2 package
+
+# Create the plot using ggplot
+predicted_WAP_plot <- ggplot(data = NULL, aes(x = to_pfeml_seq)) +
+  geom_line(aes(y = predicted_mean), color = "black", size = 2) +
+  geom_line(aes(y = lower_ci), linetype = "dashed", color = "black") +
+  geom_line(aes(y = upper_ci), linetype = "dashed", color = "black") +
+  ylim(-0.5, 1.5) +
+  labs(title = "Predicted WAP against Female Delegates Proportion",
+       x = "Female Delegates Proportion",
+       y = "Predicted WAP")+
+  theme_classic()
+
+# Save the plot as a .jpg file
+ggsave("Predicted_WAP_batch.jpg", plot = predicted_WAP_plot, width = 8, height = 6, dpi = 300)
+
 ```
-
-
-```{r, heteroskedastiscity}
-ggplot(data = merged_data, aes(x = predict(mlm_1), y = cbind(resid(mlm_1)))) + 
-  geom_point(size = 0.5, col = "red", alpha = 0.3) +
-  geom_abline(slope = 0,
-              intercept = 0,
-              col = "gray") + 
-  labs(x = "Fitted Values", y = "Residuals", 
-       title = "Residuals vs Fitted", 
-       subtitle = "Homogeneity") + 
-  coord_fixed() 
-
-
-
-
-# Fit the multilevel model
-mlm_1 <- lmer(WAP ~ to_pfeml + (1 + to_pfeml | cntryyr), data = merged_data)
-
-# Extract fitted values and residuals
-merged_data$fitted_values <- fitted(mlm_1)
-merged_data$residuals <- resid(mlm_1)
-
-# Plot residuals vs. fitted values within each group
-ggplot(merged_data, aes(x = fitted_values, y = residuals)) +
-  geom_point(size = 2, color = "red", alpha = 0.5) +
-  #facet_wrap(~ cntryyr) +  # Facet by group
-  geom_hline(yintercept = 0, color = "gray", linetype = "dashed") +
-  labs(x = "Fitted Values", y = "Residuals",
-       title = "Residuals vs Fitted Values by Group",
-       subtitle = "Assessing Within-Group Heteroscedasticity") +
-  theme_minimal()
-
-```
-
-
-```{r, residuals mlm_1}
-hist(resid(mlm_1), main = "Histogram of Residuals (normality)", 
-     xlab = "Residuals", col = "red")
-```
-
-
-```{r, simulation (working)}
-nsim <- 10000
-
-# Step 1: Get the regression coefficients
-#   NOTE: We are only using fixed effects
-beta_hat <- fixef(mlm_1)
-
-# Step 2: Generate sampling distribution
-
-# Step 2.1: Get the variance-covariance matrix.
-V_hat <-  vcov(mlm_1)
-
-# Step 2.2: Draw from the multivariate normal distribution.
-S <- mvrnorm(nsim, beta_hat, V_hat)
-
-# Additional Step 2.3: Add random effects
-
-# varying intercept
-S[, "(Intercept)"] <- 
-  S[, "(Intercept)"] + 
-  ranef(mlm_1)$country["Spain", "(Intercept)"]
-# varying slope
-S[, "to_pfeml"] <- 
-  S[, "to_pfeml"] + 
-  ranef(mlm_1)$country["Spain", "to_pfeml"]
-
-
-
-# Step 3: Choose interesting covariate values. 
-# Make sure the matrix multiplication also works for single scenarios
-min_to_pfeml <- min(merged_data$to_pfeml[merged_data$country == "Spain"], na.rm = T)
-max_to_pfeml <- max(merged_data$to_pfeml[merged_data$country == "Spain"], na.rm = T)
-to_pfeml_seq <- seq(min_to_pfeml, max_to_pfeml,
-                     length.out = 100)
-
-scenario <- cbind(1, to_pfeml_seq)
-
-# Step 4: Calculate Quantities of Interest - 
-# Expected Values
-EV <- S %*% t(scenario)
-
-# Step 5: Summarize
-ev_mean <- apply(EV, 2, mean)
-ev_ci <- apply(EV, 2, quantile, c(0.025, 0.975))
-```
-
-```{r, plot simulation}
-plot(x = to_pfeml_seq,
-     y = ev_mean,
-     ylim = c(0.1, 1),
-     xlim = c(0.0, 0.5),
-     type = "l",
-     lwd = 1.5,
-     main = "Female share and WAP in Spain",
-     font.main = 1,
-     ylab = "Expected value of WAP",
-     xlab = "Average female share",
-     las = 1)
-lines(x = to_pfeml_seq,
-      y = ev_ci["2.5%",],
-      lty = "dashed",
-      lwd = 1.5)
-lines(x = to_pfeml_seq,
-      y = ev_ci["97.5%",],
-      lty = "dashed",
-      lwd = 1.5)
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
