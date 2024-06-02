@@ -50,7 +50,25 @@ sapply(p_needed, require, character.only = TRUE)
 # "latex"
 ```
 
+```{r function to delet stuff because of RAM}
 
+# Function to delete several objects at once
+# we want to keep environment clean at all times because we have large data to process 
+
+delete_objects <- function(..., envir = .GlobalEnv) {
+  objects <- list(...)
+  for (obj in objects) {
+    if (exists(obj, envir = envir)) {
+      rm(list = obj, envir = envir)
+      cat("Deleted:", obj, "\n")
+    } else {
+      cat("Object", obj, "not found in the environment.\n")
+    }
+  }
+}
+
+
+```
 
 ```{r, load multilevel}
 load("raw-data/multilevel_1-5-22.Rdata")
@@ -116,10 +134,10 @@ print(cy_interest)
 # Use filter() to select rows where IMD1004 is one of the countries in years of interest
 selected_dataset <- filter(selected_vars, IMD1004 %in% cy_interest)
 
- 
- rm(cses_imd)
- rm(cses)
- rm(selected_vars)
+# Keep the environment clean
+delete_objects("cses_imd", "cses", "selected_vars",
+               "countries", "years", "cy_interest",
+               "country", "year")
 
 ```
 
@@ -145,7 +163,8 @@ selected_d[, c("IMD5005_A", "IMD5005_B", "IMD5005_C", "IMD5005_D",
   selected_d[, c("IMD5005_A", "IMD5005_B", "IMD5005_C", "IMD5005_D", 
            "IMD5005_E", "IMD5005_F", "IMD5005_G", "IMD5005_H", "IMD5005_I")] / 100
 
-rm(selected_dataset)
+# Keep the environment clean
+delete_objects("selected_dataset")
 ```
 
 
@@ -267,6 +286,8 @@ cases_full <- c("AUS_1996",
            )
 
 Full_selected_d <- filter(selected_d, IMD1004 %in% cases_full)
+
+rm(cases_full)
 ```
 
 # 2 For France 
@@ -275,6 +296,8 @@ Full_selected_d <- filter(selected_d, IMD1004 %in% cases_full)
 cases_fra <- c("FRA_2002", "FRA_2012")
 
 FRA_selected_d <- filter(selected_d, IMD1004 %in% cases_fra)
+
+rm(cases_fra)
 ```
 
 # 3 For all country_year where vote share and preference does not fit
@@ -345,14 +368,13 @@ GBR_2015_d <- GBR_2015_d %>%
 combined_df <- bind_rows(DEU_2002_d, DEU_2005_d, NLD_1998_d, PRT_2015_d, 
                          SWE_2006_d, USA_2004_d, ESP_2008_d, GBR_2015_d)
 
-rm(DEU_2002_d)
-rm(DEU_2005_d)
-rm(NLD_1998_d)
-rm(PRT_2015_d)
-rm(SWE_2006_d)
-rm(USA_2004_d)
-rm(ESP_2008_d)
-rm(GBR_2015_d)
+# Keep the environment clean
+delete_objects("DEU_2002_d", "DEU_2005_d", "NLD_1998_d",
+               "PRT_2015_d", "SWE_2006_d", "USA_2004_d",
+               "USA_2004_d", "ESP_2008_d", "GBR_2015_d",
+               "DEU_2002", "DEU_2005", "NLD_1998", 
+               "PRT_2015", "SWE_2006", "USA_2004", 
+               "ESP_2008", "GBR_2015")
 
 ```
 
@@ -540,13 +562,10 @@ AP_party_df <- AP_party_df %>%
 # Reshape data frame into long format
 AP_party_long <- pivot_longer(AP_party_df, cols = -ID, names_to = "party_to", values_to = "WAP")
 
-rm(AP_six_spe)
-rm(AP_FRA_scores)
-rm(AP_Full_scores)
-
-rm(combined_df)
-rm(FRA_selected_d)
-rm(Full_selected_d)
+# Keep environment clean
+delete_objects("AP_six_spe", "AP_FRA_scores", "AP_Full_scores", 
+               "AP_party_df", "AP_all_scores",
+               "combined_df", "FRA_selected_d", "Full_selected_d")
 ```
 
 
@@ -563,27 +582,31 @@ merged_data <- merge(AP_party_long, multilevel_data, by = c("party_to", "ID"))
 
 merged_data <- merged_data %>%
   filter(to_prior_seats >= 4) %>%
-  select(rile_distance_s, prior_coalition, prior_opposition, econ_distance_s, society_distance_s,
-         year, country, party_dislike, party_like, cntryyr, to_pfeml, to_prior_seats, to_mp_number, WAP) %>%
+  select(year, country, party_dislike, party_like, cntryyr, to_pfeml, to_prior_seats, WAP) %>%
   na.omit()
 
+# We need as numeric 
 merged_data$to_pfeml <- as.numeric(merged_data$to_pfeml)
 merged_data$WAP <- as.numeric(merged_data$WAP)
 
 
-# check
+# check that to_pfeml is no NAs
 sum(is.na(merged_data$to_pfeml))
+
+
+# Need log1p transformation for WAP 
+hist((merged_data$WAP),breaks = 50, main= "WAP")
+qqnorm(merged_data$WAP)
+qqline(merged_data$WAP, col = "red")
 
 # Transform WAP because skewed
 merged_data$log_WAP <- log1p(merged_data$WAP)
+
+# Check
 hist(log1p(merged_data$log_WAP), breaks=50, main="Transformed WAP")
 
-# We need RAM for this project, get rid of what we do not need anymore
-rm(AP_all_scores)
-rm(AP_party_df)
-rm(AP_party_long)
-rm(multilevel_data)
-rm(selected_d)
+# Keep envrionment clean
+delete_objects("AP_party_long", "multilevel_data", "selected_d")
 
 ```
 ```{r, chunk to test stuff}
@@ -736,7 +759,7 @@ summary(truncated_model_with_priors)
 
 # Plot autocorrelation
 mcmc_plot <- mcmc_plot(truncated_model_with_priors, type = "acf")
-save(mcmc_plot, file = "mcmc_plot_full.png")
+png("mcmc_plot_full.png")
 
 pairs(truncated_model_with_priors)
 
@@ -747,12 +770,18 @@ save(pp_check, file = "pp_check_full.png")
 truncated_model_full <- plot(truncated_model_with_priors)
 save(truncated_model_with_priors, file = "truncated_model_plot1.png")
 
-residuals <- residuals(truncated_model_with_priors)
-plot(residuals)
+# Posterior predictive checks
+pp_check(truncated_model_with_priors)
+png(pp_check_full.png)
+
+# Cross-validation
+loo_result <- loo(truncated_model_with_priors)
+print(loo_result)
 
 ```
 
-```{r, correct plot}
+
+```{r, correct plot predictions WAP and to_pfeml}
 # Define the sequence of to_pfeml values
 to_pfeml_seq <- seq(from = min(merged_data$to_pfeml, na.rm = TRUE),
                     to = max(merged_data$to_pfeml, na.rm = TRUE),
@@ -833,3 +862,97 @@ predicted_WAP_plot <- ggplot(data = NULL, aes(x = to_pfeml_seq)) +
 ggsave("Predicted_WAP_batch.jpg", plot = predicted_WAP_plot, width = 8, height = 6, dpi = 300)
 
 ```
+
+
+```{r, residual plot of truncated model full}
+
+# Function to process data in batches for residuals
+batch_predict_residuals <- function(model, data, batch_size = 1000) {
+  n <- nrow(data)
+  results <- list()
+  
+  for (i in seq(1, n, by = batch_size)) {
+    print(paste("Processing batch:", i, "to", min(i + batch_size - 1, n)))
+    batch_data <- data[i:min(i + batch_size - 1, n), ]
+    predictions <- posterior_predict(model, newdata = batch_data, draws = 100)
+    results[[length(results) + 1]] <- colMeans(predictions)  # Use mean of draws for residual calculation
+  }
+  
+  unlist(results)
+}
+
+# Generate predictions for the original data in batches
+predicted_values <- batch_predict_residuals(truncated_model_with_priors, merged_data, batch_size = 1000)
+
+# Calculate residuals
+observed_values <- merged_data$log_WAP
+residuals <- observed_values - predicted_values
+
+# Create a data frame for plotting
+residuals_data <- data.frame(
+  Predicted = predicted_values,
+  Residuals = residuals,
+  to_pfeml = merged_data$to_pfeml
+)
+
+# Plot residuals against predicted values
+residuals_plot <- ggplot(residuals_data, aes(x = Predicted, y = Residuals)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  labs(title = "Residuals vs Predicted Values",
+       x = "Predicted Values",
+       y = "Residuals") +
+  theme_classic()
+
+# Save the residual plot as a .jpg file
+ggsave("Residuals_vs_Predicted.jpg", plot = residuals_plot, width = 8, height = 6, dpi = 300)
+
+# Plot residuals against to_pfeml values
+residuals_to_pfeml_plot <- ggplot(residuals_data, aes(x = to_pfeml, y = Residuals)) +
+  geom_point(alpha = 0.3) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  labs(title = "Residuals vs Female Delegates Proportion",
+       x = "Female Delegates Proportion",
+       y = "Residuals") +
+  theme_classic()
+
+# Save the residual plot as a .jpg file
+ggsave("Residuals_vs_to_pfeml.jpg", plot = residuals_to_pfeml_plot, width = 8, height = 6, dpi = 300)
+
+```
+
+# Robustness check 
+
+```{r, cross validation with 1/3 and 2/3 od data}
+set.seed(123)
+
+# Sample 33.33% of data within each group
+sampled_data_1_3 <- merged_data %>%
+  group_by(cntryyr) %>%
+  sample_frac(0.3333) %>%
+  ungroup()
+
+priors <- c(
+  prior(normal(0, 1), class = "b"),          # Coefficients
+  prior(cauchy(0, 1), class = "sd"),         # Standard deviations
+  prior(lkj(2), class = "cor")               # Correlations
+)
+
+# Use four cores parallel to enhence computataion process 
+plan(multisession, workers = 4)
+
+# Train the model on the sampled data (33.33% of each group)
+truncated_model_1_3 <- brm(
+  bf(log_WAP | trunc(lb = log1p(0), ub = log1p(4)) ~ to_pfeml + (1 + to_pfeml | cntryyr)),
+  data = sampled_data_1_3,
+  family = gaussian(),
+  chains = 4,
+  iter = 4000,
+  warmup = 1000,
+  cores = 4,
+  save_model = "trained_model.rds",
+  prior = priors
+)
+
+```
+
